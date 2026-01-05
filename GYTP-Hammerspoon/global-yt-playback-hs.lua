@@ -90,6 +90,7 @@ local CursorMsg = (function()
     end
   end
 
+  local function render(secs)
     local buf = {}
     for i = 1, #lines do
       local prefix = (i == #lines) and "> " or "  "
