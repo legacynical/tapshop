@@ -153,16 +153,8 @@ end)()
 -- ------------- Helpers -------------
 local function sleepSeconds(sec)
   if sec and sec > 0 then
-    hs.timer.usleep(math.floor(sec * 1000000))
+    hs.timer.usleep(math.floor(sec * 1e6))
   end
-end
-
-local function appNameOrBundle(win)
-  local app = win and win:application()
-  if not app then
-    return "[UnknownApp]"
-  end
-  return app:bundleID() or app:name() or "[Unknown]"
 end
 
 local function GetWinInfo(win)
@@ -170,12 +162,12 @@ local function GetWinInfo(win)
   if not win then
     return nil
   end
+  local app = win:application()
   return {
     title = win:title() or "",
     id = win:id(),
-    app = appNameOrBundle(win),
-    appName = win:application() and win:application():name() or "",
-    bundleID = win:application() and win:application():bundleID() or "",
+    appName = app and app:name() or "",
+    bundleID = app and app:bundleID() or "",
   }
 end
 
