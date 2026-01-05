@@ -1,3 +1,4 @@
 /my-setup
 /exports
 .prettierignore
+.DS_Store

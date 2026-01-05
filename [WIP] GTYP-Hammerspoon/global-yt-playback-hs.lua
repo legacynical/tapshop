@@ -1,12 +1,17 @@
--- TAPSHOP (Hammerspoon port of your AHK script)
+-- TAPSHOP (Hammerspoon port)
 -- Requires: Accessibility permissions enabled for Hammerspoon
 
 local Config = {
-  inputDelay = 0.05, -- seconds; AHK had 50 ms
+  inputDelay = 0.05, -- seconds
   minimizeThreshold = 2,
   isGuiDebugMode = false,
   isHotkeyDebugMode = false,
-  cursorMsgBottomMargin = 100, -- lift above bottom of visible screen area
+
+  cursorMsgBottomMargin = 100,
+  cursorMsgWidth = 760,
+  cursorMsgTextSize = 14,
+  cursorMsgMaxLines = 25,
+
   browserBundleIDs = {
     ["com.apple.Safari"] = true,
     ["com.google.Chrome"] = true,
@@ -37,17 +42,13 @@ local function bindIfAvailable(mods, key, fn)
   end
 end
 
--- ------------- CursorMsg: stacked transient alert near bottom center -------------
--- Places alert at bottom-center of the screen under the mouse, lifted above Dock/menubar
-CursorMsg = (function()
+-- --------- CursorMsg: stacked transient toast at bottom-center ---------
+-- hs.alert cannot be positioned by x/y; use hs.drawing instead.
+local CursorMsg = (function()
   local lines = {}
   local timer = nil
-  local maxLines = 25
-  local alertId = nil
-
-  local function bottomMargin()
-    return (Config and Config.cursorMsgBottomMargin) or 100
-  end
+  local bg = nil
+  local txt = nil
 
   local function pickScreen()
     return hs.mouse.getCurrentScreen()
@@ -55,46 +56,78 @@ CursorMsg = (function()
       or hs.screen.mainScreen()
   end
 
-  local function alertPos()
+  local function computeRects(lineCount)
     local scr = pickScreen()
     local vf = scr:frame() -- visible frame
-    local x = vf.x + vf.w / 2
-    local y = vf.y + vf.h - bottomMargin()
-    return { x = x, y = y }
+    local w = Config.cursorMsgWidth
+    local textSize = Config.cursorMsgTextSize
+    local padding = 14
+    local lineHeight = math.floor(textSize * 1.35)
+    local h = padding * 2 + (lineCount * lineHeight)
+
+    local x = math.floor(vf.x + (vf.w - w) / 2)
+    local y = math.floor(vf.y + vf.h - Config.cursorMsgBottomMargin - h)
+
+    local rect = hs.geometry.rect(x, y, w, h)
+    local textRect = hs.geometry.rect(
+      x + padding,
+      y + padding,
+      w - padding * 2,
+      h - padding * 2
+    )
+
+    return rect, textRect
   end
 
-  local function show(secs)
+  local function destroy()
+    if bg then
+      bg:delete()
+      bg = nil
+    end
+    if txt then
+      txt:delete()
+      txt = nil
+    end
+  end
+
     local buf = {}
     for i = 1, #lines do
       local prefix = (i == #lines) and "> " or "  "
       buf[#buf + 1] = prefix .. tostring(lines[i])
     end
+
     local text = table.concat(buf, "\n")
     if text == "" then
       text = " "
     end
 
-    if alertId then
-      hs.alert.closeSpecific(alertId)
-      alertId = nil
+    local rect, textRect = computeRects(#lines)
+
+    if not bg then
+      bg = hs.drawing.rectangle(rect)
+      bg:setFill(true)
+      bg:setFillColor({ red = 0, green = 0, blue = 0, alpha = 0.70 })
+      bg:setStroke(false)
+      bg:setRoundedRectRadii(8, 8)
+      bg:setLevel(hs.drawing.windowLevels.popUpMenu)
+      bg:setBehavior(hs.drawing.windowBehaviors.canJoinAllSpaces)
+    else
+      bg:setFrame(rect)
     end
 
-    local style = { textSize = 14, radius = 6 }
-    local ok, id = pcall(hs.alert.show, text, style, alertPos(), secs)
-    if ok and id then
-      alertId = id
-      return
+    if not txt then
+      txt = hs.drawing.text(textRect, text)
+      txt:setTextSize(Config.cursorMsgTextSize)
+      txt:setTextColor({ white = 1, alpha = 1 })
+      txt:setLevel(hs.drawing.windowLevels.popUpMenu)
+      txt:setBehavior(hs.drawing.windowBehaviors.canJoinAllSpaces)
+    else
+      txt:setFrame(textRect)
+      txt:setText(text)
     end
-    hs.alert.show(text, style, secs)
-  end
 
-  return function(msg, secs)
-    secs = secs or 2.0
-    lines[#lines + 1] = tostring(msg)
-    if #lines > maxLines then
-      table.remove(lines, 1)
-    end
-    show(secs)
+    bg:show()
+    txt:show()
 
     if timer then
       timer:stop()
@@ -102,11 +135,17 @@ CursorMsg = (function()
     end
     timer = hs.timer.doAfter(secs, function()
       lines = {}
-      if alertId then
-        hs.alert.closeSpecific(alertId)
-        alertId = nil
-      end
+      destroy()
     end)
+  end
+
+  return function(msg, secs)
+    secs = secs or 2.0
+    lines[#lines + 1] = tostring(msg)
+    if #lines > Config.cursorMsgMaxLines then
+      table.remove(lines, 1)
+    end
+    render(secs)
   end
 end)()
 
