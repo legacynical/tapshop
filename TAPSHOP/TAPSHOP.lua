@@ -592,7 +592,7 @@ local function rebuildMenu()
 
   for i, ws in ipairs(TAPSHOP.workspaces) do
     items[#items + 1] = {
-      title = string.format("%d) %s -> %s", i, ws.label, winTitleById(ws.id)),
+      title = string.format("%d) %s", i, winTitleById(ws.id)),
       disabled = true,
     }
     items[#items + 1] = {
