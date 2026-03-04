@@ -2,3 +2,4 @@
 /exports
 .prettierignore
 .DS_Store
+.cursor
