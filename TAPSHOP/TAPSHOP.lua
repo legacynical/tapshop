@@ -626,6 +626,383 @@ end
 menuBar:setTitle("TAPSHOP")
 rebuildMenu()
 
+-- =========== Popover ===========
+-- Classes: container, header, title, row, slot-num, slot-label, paired, unpaired,
+-- slot-buttons, btn, btn-primary, btn-unpair, footer, footer-btn, footer-info,
+-- footer-danger, footer-close
+
+local Popover = (function()
+  local wv = nil
+  local uc = nil
+  local escTap = nil
+  local callerWin = nil
+  local isShown = false
+
+  local POP_W = 500
+  local POP_H = 410
+
+  local POPOVER_CSS = [=[
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-size: 13px;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.container {
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 6px;
+}
+
+.header .title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+}
+
+.slot-num {
+  width: 18px;
+  text-align: right;
+  color: #666;
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.slot-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+  font-size: 12px;
+}
+
+.paired {
+  color: #7ec87e;
+}
+
+.unpaired {
+  color: #555;
+  font-style: italic;
+}
+
+.slot-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn {
+  border: none;
+  border-radius: 4px;
+  padding: 4px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.btn:active {
+  opacity: 0.6;
+}
+
+.btn-primary {
+  background: #2d6ee6;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #4080f0;
+}
+
+.btn-unpair {
+  background: #444;
+  color: #bbb;
+}
+
+.btn-unpair:hover {
+  background: #555;
+}
+
+.btn-unpair.off {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.footer {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #333;
+}
+
+.footer-btn {
+  border: none;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.footer-btn:active {
+  opacity: 0.6;
+}
+
+.footer-info {
+  background: #3a3a3a;
+  color: #aaa;
+}
+
+.footer-info:hover {
+  background: #4a4a4a;
+  color: #ccc;
+}
+
+.footer-danger {
+  background: #a03020;
+  color: #fff;
+}
+
+.footer-danger:hover {
+  background: #c04030;
+}
+
+.footer-close {
+  background: #2a2a2a;
+  color: #777;
+  margin-left: auto;
+}
+
+.footer-close:hover {
+  background: #3a3a3a;
+  color: #aaa;
+}
+]=]
+
+  local POPOVER_FOOTER = [=[
+  <div class="footer">
+    <button class="footer-btn footer-info" onclick="sendAction('info')">
+      Window Details
+    </button>
+    <button class="footer-btn footer-danger" onclick="sendAction('unpairAll')">
+      Unpair ALL
+    </button>
+    <button class="footer-btn footer-close" onclick="sendAction('close')">
+      Close
+    </button>
+  </div>
+</div>
+<script>
+  function sendAction(action, slot) {
+    window.webkit.messageHandlers.tapshop.postMessage({
+      action: action,
+      slot: slot || 0,
+    });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") sendAction("close");
+  });
+</script>
+</body>
+</html>]=]
+
+  local function escapeHtml(s)
+    return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
+  end
+
+  local function getHeader()
+    return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
+      .. POPOVER_CSS
+      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <span class=\"title\">TAPSHOP</span>\n    </div>\n"
+  end
+
+  local function rowHtml(i, ws)
+    local title = escapeHtml(winTitleById(ws.id))
+    local isPaired = ws.isPaired and ws.id
+    local cls = isPaired and "paired" or "unpaired"
+    local off = isPaired and "" or " off"
+    return "    <div class=\"row\">\n"
+      .. "      <span class=\"slot-num\">" .. i .. "</span>\n"
+      .. "      <span class=\"slot-label " .. cls .. "\">" .. title .. "</span>\n"
+      .. "      <div class=\"slot-buttons\">\n"
+      .. "        <button class=\"btn btn-primary\" onclick=\"sendAction('pair'," .. i .. ")\">Pair</button>\n"
+      .. "        <button class=\"btn btn-unpair" .. off .. "\" onclick=\"sendAction('unpair'," .. i .. ")\">Unpair</button>\n"
+      .. "      </div>\n"
+      .. "    </div>\n"
+  end
+
+  local function buildHtml()
+    local parts = { getHeader() }
+    for i, ws in ipairs(TAPSHOP.workspaces) do
+      parts[#parts + 1] = rowHtml(i, ws)
+    end
+    parts[#parts + 1] = POPOVER_FOOTER
+    return table.concat(parts)
+  end
+
+  local function hide()
+    if not isShown then return end
+    isShown = false
+    if wv then wv:hide() end
+    if escTap then escTap:stop() end
+  end
+
+  local actionHandlers = {
+    pair = function(slot)
+      if slot < 1 or slot > 9 then return end
+      local ws = TAPSHOP.workspaces[slot]
+      if callerWin then
+        ws.id = callerWin:id()
+        ws.isPaired = true
+        ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+        local info = GetWinInfo(callerWin)
+        CursorMsg(
+          string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
+          2.0
+        )
+      else
+        CursorMsg("No window to pair!")
+      end
+      rebuildMenu()
+    end,
+    unpair = function(slot)
+      if slot < 1 or slot > 9 then return end
+      unpairWindow(TAPSHOP.workspaces[slot])
+      rebuildMenu()
+    end,
+    unpairAll = function()
+      unpairAll()
+      rebuildMenu()
+    end,
+    info = function()
+      if callerWin then
+        local info = GetWinInfo(callerWin)
+        if info then
+          hs.dialog.blockAlert(
+            "Active Window",
+            string.format(
+              "Title: %s\nID: %s\nApp: %s\nBundleID: %s",
+              info.title, tostring(info.id), info.appName, info.bundleID
+            ),
+            "OK", "", "informational"
+          )
+        end
+      else
+        DisplayActiveWindowStats()
+      end
+    end,
+    close = function() end,
+  }
+
+  local function handleAction(msg)
+    local body = msg.body or {}
+    local action = body.action
+    local slot = tonumber(body.slot) or 0
+
+    hide()
+
+    if actionHandlers[action] then
+      actionHandlers[action](slot)
+    end
+  end
+
+  local function ensureWebview()
+    if wv then return end
+
+    uc = hs.webview.usercontent.new("tapshop")
+    uc:setCallback(handleAction)
+
+    local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
+    local vf = scr:frame()
+    local rect = hs.geometry.rect(
+      math.floor(vf.x + (vf.w - POP_W) / 2),
+      vf.y + 4,
+      POP_W,
+      POP_H
+    )
+
+    wv = hs.webview.new(rect, { developerExtrasEnabled = false }, uc)
+    wv:windowStyle(hs.webview.windowMasks.borderless)
+    wv:level(hs.drawing.windowLevels.popUpMenu)
+    wv:allowNewWindows(false)
+    wv:allowNavigationGestures(false)
+    wv:allowTextEntry(true)
+
+    wv:windowCallback(function(act, _, state)
+      if act == "focusChange" and state == false and isShown then
+        hide()
+      end
+    end)
+  end
+
+  local function show()
+    callerWin = hs.window.frontmostWindow()
+    ensureWebview()
+
+    local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
+    local vf = scr:frame()
+    wv:frame(hs.geometry.rect(
+      math.floor(vf.x + (vf.w - POP_W) / 2),
+      vf.y + 4,
+      POP_W,
+      POP_H
+    ))
+
+    wv:html(buildHtml())
+    wv:show()
+    isShown = true
+
+    if not escTap then
+      escTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(evt)
+        if evt:getKeyCode() == hs.keycodes.map["escape"] and isShown then
+          hide()
+          return true
+        end
+        return false
+      end)
+    end
+    escTap:start()
+  end
+
+  local function toggle()
+    if isShown then
+      hide()
+    else
+      show()
+    end
+  end
+
+  return { toggle = toggle, show = show, hide = hide }
+end)()
+
 -- =========== Hotkeys ===========
 
 local function bindIfAvailable(mods, key, fn)
@@ -670,17 +1047,8 @@ end)
 -- Active window info (Cmd+Option+`)
 hs.hotkey.bind(pairMods, "`", DisplayActiveWindowStats)
 
--- Popup menu (Cmd+Option+Shift+`)
-hs.hotkey.bind(toggleMenuBar, "`", function()
-  if menuBar then
-    rebuildMenu()
-    local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
-    local f = scr:fullFrame()
-    menuBar:popupMenu({ x = f.x + (f.w / 2), y = f.y + 1 })
-  else
-    CursorMsg("TAPSHOP menu not available")
-  end
-end)
+-- Popover toggle (Cmd+Option+Shift+`)
+hs.hotkey.bind(toggleMenuBar, "`", function()  Popover.toggle() end)
 
 -- YouTube controls (Cmd+Option layer)
 hs.hotkey.bind(pairMods, "left",  function() YoutubeControl("{Left}") end)
