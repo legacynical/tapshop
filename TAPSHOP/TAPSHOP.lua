@@ -779,6 +779,10 @@ body {
   color: #7ec87e;
 }
 
+.paired-minimized {
+  color: #e7c84f;
+}
+
 .unpaired {
   color: #555;
   font-style: italic;
@@ -1025,7 +1029,15 @@ body {
   local function rowHtml(i, ws)
     local title = escapeHtml(ws.displayTitle or winTitleById(ws.id))
     local isPaired = ws.isPaired and ws.id
-    local cls = isPaired and "paired" or "unpaired"
+    local cls = "unpaired"
+    if isPaired then
+      local pairedWin = hs.window.get(ws.id)
+      if pairedWin and pairedWin:isMinimized() then
+        cls = "paired-minimized"
+      else
+        cls = "paired"
+      end
+    end
     local off = isPaired and "" or " off"
     return "    <div class=\"row\">\n"
       .. "      <span class=\"slot-num\">" .. i .. "</span>\n"
