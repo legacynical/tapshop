@@ -637,6 +637,7 @@ local Popover = (function()
   local escTap = nil
   local callerWin = nil
   local isShown = false
+  local isDragging = false
 
   local POP_W = 500
   local POP_H = 410
@@ -667,6 +668,7 @@ body {
   padding-bottom: 10px;
   border-bottom: 1px solid #333;
   margin-bottom: 6px;
+  cursor: move;
 }
 
 .header .title {
@@ -820,12 +822,51 @@ body {
   </div>
 </div>
 <script>
-  function sendAction(action, slot) {
+  function sendAction(action, slot, dx, dy) {
     window.webkit.messageHandlers.tapshop.postMessage({
       action: action,
       slot: slot || 0,
+      dx: dx || 0,
+      dy: dy || 0,
     });
   }
+
+  var dragState = {
+    active: false,
+    lastX: 0,
+    lastY: 0,
+  };
+
+  var header = document.querySelector(".header");
+  if (header) {
+    header.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      dragState.active = true;
+      dragState.lastX = e.screenX;
+      dragState.lastY = e.screenY;
+      sendAction("dragStart");
+      e.preventDefault();
+    });
+  }
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragState.active) return;
+
+    var dx = e.screenX - dragState.lastX;
+    var dy = e.screenY - dragState.lastY;
+    dragState.lastX = e.screenX;
+    dragState.lastY = e.screenY;
+
+    if (dx !== 0 || dy !== 0) {
+      sendAction("dragMove", 0, dx, dy);
+    }
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragState.active) return;
+    dragState.active = false;
+    sendAction("dragEnd");
+  });
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") sendAction("close");
@@ -870,13 +911,15 @@ body {
 
   local function hide()
     if not isShown then return end
+    isDragging = false
     isShown = false
     if wv then wv:hide() end
     if escTap then escTap:stop() end
   end
 
   local actionHandlers = {
-    pair = function(slot)
+    pair = function(body)
+      local slot = tonumber(body.slot) or 0
       if slot < 1 or slot > 9 then return end
       local ws = TAPSHOP.workspaces[slot]
       if callerWin then
@@ -893,7 +936,8 @@ body {
       end
       rebuildMenu()
     end,
-    unpair = function(slot)
+    unpair = function(body)
+      local slot = tonumber(body.slot) or 0
       if slot < 1 or slot > 9 then return end
       unpairWindow(TAPSHOP.workspaces[slot])
       rebuildMenu()
@@ -920,17 +964,38 @@ body {
       end
     end,
     close = function() end,
+    dragStart = function()
+      isDragging = true
+    end,
+    dragMove = function(body)
+      if not isDragging or not wv then return end
+
+      local dx = tonumber(body.dx) or 0
+      local dy = tonumber(body.dy) or 0
+      if dx == 0 and dy == 0 then return end
+
+      local frame = wv:frame()
+      wv:topLeft({
+        x = frame.x + dx,
+        y = frame.y + dy,
+      })
+    end,
+    dragEnd = function()
+      isDragging = false
+    end,
   }
 
   local function handleAction(msg)
     local body = msg.body or {}
     local action = body.action
-    local slot = tonumber(body.slot) or 0
+    local isDragAction = action == "dragStart" or action == "dragMove" or action == "dragEnd"
 
-    hide()
+    if not isDragAction then
+      hide()
+    end
 
     if actionHandlers[action] then
-      actionHandlers[action](slot)
+      actionHandlers[action](body)
     end
   end
 
