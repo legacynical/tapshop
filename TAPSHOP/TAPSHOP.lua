@@ -585,6 +585,8 @@ local function winTitleById(id)
   return "[Unpaired]"
 end
 
+local Popover
+
 local function rebuildMenu()
   local items = {}
   items[#items + 1] = { title = "Active Window Details…", fn = DisplayActiveWindowStats }
@@ -600,6 +602,7 @@ local function rebuildMenu()
       fn = function()
         pairWindow(ws)
         rebuildMenu()
+        Popover.refreshIfShown()
       end,
     }
     items[#items + 1] = {
@@ -607,6 +610,7 @@ local function rebuildMenu()
       fn = function()
         unpairWindow(ws)
         rebuildMenu()
+        Popover.refreshIfShown()
       end,
     }
     items[#items + 1] = { title = "-" }
@@ -617,6 +621,7 @@ local function rebuildMenu()
     fn = function()
       unpairAll()
       rebuildMenu()
+      Popover.refreshIfShown()
     end,
   }
 
@@ -1076,6 +1081,11 @@ body {
     escTap:start()
   end
 
+  local function refreshIfShown()
+    if not isShown or not wv then return end
+    wv:html(buildHtml())
+  end
+
   local function toggle()
     if isShown then
       hide()
@@ -1084,7 +1094,7 @@ body {
     end
   end
 
-  return { toggle = toggle, show = show, hide = hide }
+  return { toggle = toggle, show = show, hide = hide, refreshIfShown = refreshIfShown }
 end)()
 
 -- =========== Hotkeys ===========
@@ -1113,6 +1123,7 @@ for i = 1, 9 do
   hs.hotkey.bind(pairMods, tostring(i), function()
     pairWindow(TAPSHOP.workspaces[i])
     rebuildMenu()
+    Popover.refreshIfShown()
   end)
 end
 
