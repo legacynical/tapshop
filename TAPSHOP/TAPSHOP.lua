@@ -1132,18 +1132,20 @@ for i = 1, 9 do
   hs.hotkey.bind(unpairMods, tostring(i), function()
     unpairWindow(TAPSHOP.workspaces[i])
     rebuildMenu()
+    Popover.refreshIfShown()
   end)
 end
 hs.hotkey.bind(unpairMods, "0", function()
   unpairAll()
   rebuildMenu()
+  Popover.refreshIfShown()
 end)
 
--- Active window info (Cmd+Option+`)
-hs.hotkey.bind(pairMods, "`", DisplayActiveWindowStats)
+-- Active window info (Cmd+Option+Shift+`)
+hs.hotkey.bind(unpairMods, "`", DisplayActiveWindowStats)
 
--- Popover toggle (Cmd+Option+Shift+`)
-hs.hotkey.bind(toggleMenuBar, "`", function()  Popover.toggle() end)
+-- Popover toggle (Cmd+Option+`)
+hs.hotkey.bind(pairMods, "`", function()  Popover.toggle() end)
 
 -- YouTube controls (Cmd+Option layer)
 hs.hotkey.bind(pairMods, "left",  function() YoutubeControl("{Left}") end)
