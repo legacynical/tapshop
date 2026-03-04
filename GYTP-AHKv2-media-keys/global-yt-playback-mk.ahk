@@ -60,12 +60,16 @@ class GTYP {
 			"seamonkey.exe", 1,
 			"epic.exe", 1,
 			"slimjet.exe", 1,
-			"comodo_dragon.exe", 1,
-			"avast_secure_browser.exe", 1,
-			"srware_iron.exe", 1,
+			"dragon.exe", 1,
+			"AvastBrowser.exe", 1,
+			"iron.exe", 1,
 			"falkon.exe", 1,
 			"arc.exe", 1,
 			"dia.exe", 1,
+			"comet.exe", 1,
+			"librewolf.exe", 1,
+			"floorp.exe", 1,
+			"palemoon.exe", 1,
 		)
 		this.ytWin := DetectWindowEvent(this.browserMap)
 	}
