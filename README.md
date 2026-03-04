@@ -9,9 +9,7 @@
 
 **Targeted Application Pairing System w/ Hotkey Oriented Playback**
 
-> _It's not that the few extra seconds I save from not having to move my mouse and click back and forth will increase my productivity, it's the satisfaction of not having to deal with
-> that and preventing occasional misfocused window mishaps that will get me to want to use
-> it more and work longer._
+> _Taps on your keyboard converted to efficient window hopping._
 
 ---
 
