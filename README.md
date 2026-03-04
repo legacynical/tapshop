@@ -107,6 +107,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 | `F22/F23/F24` | Optional Spotify like + volume bindings |
 | `Cmd + Option + Ctrl + ,/. / M` | System volume down/up/mute |
 
+<img width="499" height="408" alt="image" src="https://github.com/user-attachments/assets/b3109e53-944b-4f34-86e2-47e50035dbd0" />
 ---
 
 ## Behavior Notes
