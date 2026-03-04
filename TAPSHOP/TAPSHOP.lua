@@ -70,6 +70,7 @@ local function Workspace(label)
     id = nil,
     isPaired = false,
     inputBuffer = Config.minimizeThreshold,
+    displayTitle = "[Unpaired]",
   }
 end
 
@@ -337,16 +338,21 @@ local function getYTTargetWindow()
   return nil
 end
 
-local function setWorkspacePairing(workspace, id)
+local refreshWorkspaceDisplayTitle
+local refreshPairedWorkspaceTitlesForWindow
+
+local function setWorkspacePairing(workspace, id, win)
   workspace.id = id
   workspace.isPaired = true
   workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+  refreshWorkspaceDisplayTitle(workspace, win)
 end
 
 local function clearWorkspacePairing(workspace)
   workspace.id = nil
   workspace.isPaired = false
   workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+  workspace.displayTitle = "[Unpaired]"
 end
 
 -- =========== Window event subscription ===========
@@ -358,6 +364,7 @@ wf:subscribe({
   hs.window.filter.windowCreated,
   hs.window.filter.windowDestroyed,
   hs.window.filter.windowVisible,
+  hs.window.filter.windowMinimized,
   hs.window.filter.windowUnminimized,
 }, function(win, appName, event)
   pcall(function()
@@ -381,6 +388,7 @@ wf:subscribe({
       end
       return
     end
+    refreshPairedWorkspaceTitlesForWindow(win)
     setYTTargetIfApplicable(win)
   end)
 end)
@@ -397,7 +405,7 @@ local function pairWindow(workspace)
   local currentId = win:id()
 
   if not workspace.isPaired or not workspace.id then
-    setWorkspacePairing(workspace, currentId)
+    setWorkspacePairing(workspace, currentId, win)
 
     local info = GetWinInfo(win)
     CursorMsg(
@@ -418,6 +426,7 @@ local function pairWindow(workspace)
     if paired then
       workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
       focusOrRestore(paired)
+      refreshWorkspaceDisplayTitle(workspace, paired)
     else
       clearWorkspacePairing(workspace)
       CursorMsg("[Paired window missing; cleared]")
@@ -599,17 +608,60 @@ local function DisplayActiveWindowStats()
   end
 end
 
+local function windowDisplayTitle(win)
+  if not win then
+    return "[Unpaired]"
+  end
+  local app = win:application()
+  local prefix = app and app:name() or "App"
+  local title = win:title() or ""
+  if win:isMinimized() then
+    title = title .. " (minimized)"
+  end
+  return "[" .. prefix .. "] " .. title
+end
+
+refreshWorkspaceDisplayTitle = function(workspace, win)
+  if not workspace then
+    return
+  end
+  if not workspace.id then
+    workspace.displayTitle = "[Unpaired]"
+    return
+  end
+
+  local target = win
+  if not target or target:id() ~= workspace.id then
+    target = hs.window.get(workspace.id)
+  end
+
+  if target then
+    workspace.displayTitle = windowDisplayTitle(target)
+  else
+    workspace.displayTitle = "[Unpaired]"
+  end
+end
+
+refreshPairedWorkspaceTitlesForWindow = function(win)
+  if not win then
+    return
+  end
+  local id = win:id()
+  if not id then
+    return
+  end
+
+  local title = windowDisplayTitle(win)
+  for _, ws in ipairs(TAPSHOP.workspaces) do
+    if ws.id == id then
+      ws.displayTitle = title
+    end
+  end
+end
+
 local function winTitleById(id)
   local w = id and hs.window.get(id)
-  if w then
-    local app = w:application()
-    local prefix = app and app:name() or "App"
-    local title = w:title() or ""
-    if w:isMinimized() then
-      title = title .. " (minimized)"
-    end
-    return "[" .. prefix .. "] " .. title
-  end
+  if w then return windowDisplayTitle(w) end
   return "[Unpaired]"
 end
 
@@ -971,7 +1023,7 @@ body {
   end
 
   local function rowHtml(i, ws)
-    local title = escapeHtml(winTitleById(ws.id))
+    local title = escapeHtml(ws.displayTitle or winTitleById(ws.id))
     local isPaired = ws.isPaired and ws.id
     local cls = isPaired and "paired" or "unpaired"
     local off = isPaired and "" or " off"
@@ -1043,7 +1095,7 @@ body {
         local ws = TAPSHOP.workspaces[slot]
         local targetWin = activeWin or callerWin
         if targetWin then
-          setWorkspacePairing(ws, targetWin:id())
+          setWorkspacePairing(ws, targetWin:id(), targetWin)
           local info = GetWinInfo(targetWin)
           CursorMsg(
             string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
