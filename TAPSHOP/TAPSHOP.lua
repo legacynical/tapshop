@@ -11,6 +11,7 @@ local Config = {
   focusWaitTimeout = 0.22,     -- seconds
   focusPollMicros = 10000,     -- 10ms polling
   youtubeDirectDispatch = true,
+  popoverAutoHideAfterAction = false,
 
   cursorMsgBottomMargin = 100,
   cursorMsgWidth = 760,
@@ -47,6 +48,12 @@ local Config = {
     ["one.ablaze.floorp"] = true,
   },
 }
+
+local POPOVER_AUTO_HIDE_KEY = "tapshop.popover.autoHideAfterAction"
+local storedAutoHide = hs.settings.get(POPOVER_AUTO_HIDE_KEY)
+if type(storedAutoHide) == "boolean" then
+  Config.popoverAutoHideAfterAction = storedAutoHide
+end
 
 -- =========== State ===========
 
