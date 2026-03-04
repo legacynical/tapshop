@@ -337,6 +337,7 @@ wf:subscribe({
         end
         if changed then
           CursorMsg("[Cleared pairing: window closed]")
+          rebuildMenu()
         end
       end
       return
@@ -672,6 +673,7 @@ hs.hotkey.bind(pairMods, "`", DisplayActiveWindowStats)
 -- Popup menu (Cmd+Option+Shift+`)
 hs.hotkey.bind(toggleMenuBar, "`", function()
   if menuBar then
+    rebuildMenu()
     local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
     local f = scr:fullFrame()
     menuBar:popupMenu({ x = f.x + (f.w / 2), y = f.y + 1 })
