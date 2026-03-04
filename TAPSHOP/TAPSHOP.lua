@@ -571,21 +571,21 @@ end
 
 local menuBar = hs.menubar.new(true)
 
-local function rebuildMenu()
-  local function winTitleById(id)
-    local w = id and hs.window.get(id)
-    if w then
-      local app = w:application()
-      local prefix = app and app:name() or "App"
-      local title = w:title() or ""
-      if w:isMinimized() then
-        title = title .. " (minimized)"
-      end
-      return "[" .. prefix .. "] " .. title
+local function winTitleById(id)
+  local w = id and hs.window.get(id)
+  if w then
+    local app = w:application()
+    local prefix = app and app:name() or "App"
+    local title = w:title() or ""
+    if w:isMinimized() then
+      title = title .. " (minimized)"
     end
-    return "[Unpaired]"
+    return "[" .. prefix .. "] " .. title
   end
+  return "[Unpaired]"
+end
 
+local function rebuildMenu()
   local items = {}
   items[#items + 1] = { title = "Active Window Details…", fn = DisplayActiveWindowStats }
   items[#items + 1] = { title = "-" }
