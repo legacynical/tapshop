@@ -640,18 +640,44 @@ body {
 
 .header {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid #333;
   margin-bottom: 6px;
   cursor: move;
 }
 
+.header .title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
 .header .title {
+  display: block;
   font-weight: 700;
   font-size: 14px;
   color: #fff;
   letter-spacing: 0.5px;
+}
+
+.header .header-details {
+  margin-left: auto;
+  text-align: right;
+}
+
+.header .subtitle-line {
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #9aa0a6;
 }
 
 .row {
@@ -753,16 +779,6 @@ body {
   opacity: 0.6;
 }
 
-.footer-info {
-  background: #3a3a3a;
-  color: #aaa;
-}
-
-.footer-info:hover {
-  background: #4a4a4a;
-  color: #ccc;
-}
-
 .footer-danger {
   background: #a03020;
   color: #fff;
@@ -782,13 +798,65 @@ body {
   background: #3a3a3a;
   color: #aaa;
 }
+
+.config-menu {
+  position: relative;
+}
+
+.config-menu summary {
+  list-style: none;
+}
+
+.config-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.config-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  min-width: 245px;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  background: #171717;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+  padding: 8px 10px;
+  z-index: 5;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #c6c6c6;
+  cursor: pointer;
+}
+
+.config-item input {
+  accent-color: #2d6ee6;
+}
+
+.config-trigger {
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #2a2a2a;
+  color: #999;
+  cursor: pointer;
+}
+
+.config-trigger:hover {
+  background: #3a3a3a;
+  color: #c0c0c0;
+}
 ]=]
 
   local POPOVER_FOOTER = [=[
   <div class="footer">
-    <button class="footer-btn footer-info" onclick="sendAction('info')">
-      Window Details
-    </button>
     <button class="footer-btn footer-danger" onclick="sendAction('unpairAll')">
       Unpair ALL
     </button>
@@ -817,6 +885,7 @@ body {
   if (header) {
     header.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
+      if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
       dragState.active = true;
       dragState.lastX = e.screenX;
       dragState.lastY = e.screenY;
@@ -856,9 +925,28 @@ body {
   end
 
   local function getHeader()
+    local info = GetWinInfo(activeWin) or GetWinInfo(callerWin) or GetWinInfo()
+    local subtitleLines = {}
+    if info then
+      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
+        .. escapeHtml(info.title) .. "</span>"
+      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
+        .. escapeHtml(string.format("%s (%s)", info.appName, info.bundleID))
+        .. "</span>"
+      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
+        .. escapeHtml("Window ID: " .. tostring(info.id)) .. "</span>"
+    else
+      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">No active window found</span>"
+    end
+    local checked = TAPSHOP.cfg.popoverAutoHideAfterAction and "checked" or ""
+
     return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
       .. POPOVER_CSS
-      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <span class=\"title\">TAPSHOP</span>\n    </div>\n"
+      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
+      .. checked
+      .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
+      .. table.concat(subtitleLines, "\n          ")
+      .. "\n      </div>\n    </div>\n"
   end
 
   local function rowHtml(i, ws)
@@ -919,11 +1007,12 @@ body {
       local slot = tonumber(body.slot) or 0
       if slot < 1 or slot > 9 then return end
       local ws = TAPSHOP.workspaces[slot]
-      if callerWin then
-        ws.id = callerWin:id()
+      local targetWin = activeWin or callerWin
+      if targetWin then
+        ws.id = targetWin:id()
         ws.isPaired = true
         ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
-        local info = GetWinInfo(callerWin)
+        local info = GetWinInfo(targetWin)
         CursorMsg(
           string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
           2.0
@@ -1021,6 +1110,7 @@ body {
 
   local function show()
     callerWin = hs.window.frontmostWindow()
+    activeWin = callerWin
     ensureWebview()
 
     local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
@@ -1049,6 +1139,15 @@ body {
   local function refreshIfShown()
     if not isShown or not wv then return end
     wv:html(buildHtml())
+  end
+
+  local function updateActiveWindow(win)
+    if win then
+      activeWin = win
+    else
+      activeWin = hs.window.frontmostWindow() or activeWin
+    end
+    refreshIfShown()
   end
 
   local function toggle()
@@ -1096,15 +1195,13 @@ end
 
 local pairMods = { "cmd", "alt" }
 local unpairMods = { "cmd", "alt", "shift" }
-local toggleMenuBar = { "cmd", "alt", "shift" }
 local hyper = { "cmd", "alt", "ctrl" }
 
 -- Cmd+Option+1..9: context-aware pair/focus/minimize
 for i = 1, 9 do
   hs.hotkey.bind(pairMods, tostring(i), function()
     pairWindow(TAPSHOP.workspaces[i])
-    rebuildMenu()
-    Popover.refreshIfShown()
+    syncUi()
   end)
 end
 
