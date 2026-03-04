@@ -1,11 +1,16 @@
 -- TAPSHOP (Hammerspoon port)
 -- Requires: Accessibility permissions enabled for Hammerspoon
 
+-- =========== Config ===========
+
 local Config = {
-  inputDelay = 0.05, -- seconds
+  inputDelay = 0.05,           -- seconds
   minimizeThreshold = 2,
   isGuiDebugMode = false,
   isHotkeyDebugMode = false,
+  focusWaitTimeout = 0.22,     -- seconds
+  focusPollMicros = 10000,     -- 10ms polling
+  youtubeDirectDispatch = true,
 
   cursorMsgBottomMargin = 100,
   cursorMsgWidth = 760,
@@ -18,32 +23,54 @@ local Config = {
     ["org.chromium.Chromium"] = true,
     ["com.brave.Browser"] = true,
     ["com.operasoftware.Opera"] = true,
+    ["com.operasoftware.OperaGX"] = true,
     ["com.vivaldi.Vivaldi"] = true,
     ["org.mozilla.firefox"] = true,
     ["com.microsoft.edgemac"] = true,
     ["ru.yandex.desktop.yandex-browser"] = true,
     ["org.waterfoxproject.waterfox"] = true,
     ["org.torproject.torbrowser"] = true,
+    ["com.maxthon.browser"] = true,
+    ["com.maxthon.Maxthon"] = true,
+    ["org.mozilla.seamonkey"] = true,
+    ["com.hiddenreflex.epic"] = true,
+    ["com.hiddenreflex.epicbrowser"] = true,
+    ["com.flashpeak.Slimjet"] = true,
+    ["com.comodo.dragon"] = true,
+    ["com.avast.browser"] = true,
+    ["com.srware.iron"] = true,
+    ["org.kde.falkon"] = true,
+    ["company.thebrowser.Browser"] = true,
+    ["company.thebrowser.dia"] = true,
+    ["ai.perplexity.comet"] = true,
+    ["io.gitlab.librewolf-community.librewolf"] = true,
+    ["one.ablaze.floorp"] = true,
   },
 }
 
--- --------- Safe hotkey bind (skips missing keys like F21/F22/F23/F24) ---------
-local function bindIfAvailable(mods, key, fn)
-  local map = hs.keycodes.map
-  local kLower = string.lower(key)
-  if map[key] or map[kLower] then
-    hs.hotkey.bind(mods, key, fn)
-  else
-    hs.printf(
-      "Skipping hotkey: %s + %s (key not in keymap)",
-      table.concat(mods, "+"),
-      key
-    )
-  end
+-- =========== State ===========
+
+local function Workspace(label)
+  return {
+    label = label,
+    id = nil,
+    isPaired = false,
+    inputBuffer = Config.minimizeThreshold,
+  }
 end
 
--- --------- CursorMsg: stacked transient toast at bottom-center ---------
--- hs.alert cannot be positioned by x/y; use hs.drawing instead.
+local TAPSHOP = {
+  cfg = Config,
+  workspaces = {},
+  ytTargetId = nil,
+}
+
+for i = 1, 9 do
+  TAPSHOP.workspaces[#TAPSHOP.workspaces + 1] = Workspace("Window " .. tostring(i))
+end
+
+-- =========== CursorMsg ===========
+
 local CursorMsg = (function()
   local lines = {}
   local timer = nil
@@ -58,7 +85,7 @@ local CursorMsg = (function()
 
   local function computeRects(lineCount)
     local scr = pickScreen()
-    local vf = scr:frame() -- visible frame
+    local vf = scr:frame()
     local w = Config.cursorMsgWidth
     local textSize = Config.cursorMsgTextSize
     local padding = 14
@@ -150,7 +177,8 @@ local CursorMsg = (function()
   end
 end)()
 
--- ------------- Helpers -------------
+-- =========== Helpers ===========
+
 local function sleepSeconds(sec)
   if sec and sec > 0 then
     hs.timer.usleep(math.floor(sec * 1e6))
@@ -171,39 +199,62 @@ local function GetWinInfo(win)
   }
 end
 
-local function allWindowsVisible()
-  -- filters out hidden or minimized windows
-  local wins = hs.window.filter.default:getWindows()
+local function candidateWindows()
+  local wins = hs.window.orderedWindows()
   local out = {}
   for _, w in ipairs(wins) do
-    if w:isVisible() then
-      table.insert(out, w)
+    if w
+      and w:isVisible()
+      and w:isStandard()
+      and (w:title() or ""):match("%S")
+    then
+      out[#out + 1] = w
     end
   end
   return out
 end
 
--- ------------- Workspace model -------------
-local function Workspace(label)
-  return {
-    label = label,
-    id = nil,
-    isPaired = false,
-    inputBuffer = Config.minimizeThreshold, -- per-workspace buffer
-  }
+local function waitForFrontmost(win, timeoutSec)
+  timeoutSec = timeoutSec or Config.focusWaitTimeout
+  local start = hs.timer.secondsSinceEpoch()
+  while (hs.timer.secondsSinceEpoch() - start) < timeoutSec do
+    local fw = hs.window.frontmostWindow()
+    if fw and win and fw:id() == win:id() then
+      return true
+    end
+    hs.timer.usleep(Config.focusPollMicros)
+  end
+  return false
 end
 
-local TAPSHOP = {
-  cfg = Config,
-  workspaces = {},
-  ytTargetId = nil,
-}
+local function focusOrRestore(win)
+  if not win then
+    return false
+  end
 
-for i = 1, 9 do
-  table.insert(TAPSHOP.workspaces, Workspace("Window " .. tostring(i)))
+  local app = win:application()
+  local fw = hs.window.frontmostWindow()
+  if fw and fw:id() == win:id() then
+    return true
+  end
+
+  if app and app:isHidden() then
+    app:unhide()
+  end
+  if app then
+    app:activate(true)
+  end
+  if win:isMinimized() then
+    win:unminimize()
+    hs.timer.usleep(15000)
+  end
+
+  win:focus()
+  return waitForFrontmost(win)
 end
 
--- ------------- YouTube window tracking -------------
+-- =========== YouTube window tracking ===========
+
 local function isYouTubeWindow(win)
   if not win or not win:isVisible() then
     return false
@@ -212,18 +263,21 @@ local function isYouTubeWindow(win)
   if not app then
     return false
   end
+
   local bid = app:bundleID() or ""
   if not TAPSHOP.cfg.browserBundleIDs[bid] then
     return false
   end
+
   local title = win:title() or ""
   if title == "" then
     return false
   end
-  if string.find(title, "Subscriptions - YouTube", 1, true) then
+  if title:find("Subscriptions - YouTube", 1, true) then
     return false
   end
-  return string.find(title, "- YouTube", 1, true) ~= nil
+
+  return title:find(" - YouTube", 1, true) ~= nil
 end
 
 local function setYTTargetIfApplicable(win)
@@ -236,16 +290,6 @@ local function setYTTargetIfApplicable(win)
   end
 end
 
-local wf = hs.window.filter.new(nil)
-wf:subscribe({
-  hs.window.filter.windowFocused,
-  hs.window.filter.windowTitleChanged,
-}, function(win, appName, event)
-  pcall(function()
-    setYTTargetIfApplicable(win)
-  end)
-end)
-
 local function getYTTargetWindow()
   if TAPSHOP.ytTargetId then
     local w = hs.window.get(TAPSHOP.ytTargetId)
@@ -253,81 +297,55 @@ local function getYTTargetWindow()
       return w
     end
   end
-  -- scan any YouTube window
-  for _, w in ipairs(allWindowsVisible()) do
+
+  for _, w in ipairs(candidateWindows()) do
     if isYouTubeWindow(w) then
       TAPSHOP.ytTargetId = w:id()
       return w
     end
   end
+
   return nil
 end
 
--- ------------- Spotify helpers -------------
-local function spotifyIsRunning()
-  local app = hs.application.get("Spotify")
-  return app ~= nil
-end
+-- =========== Window event subscription ===========
 
-local function spotifyAdjustPosition(delta)
-  -- adjust Spotify playback position by delta seconds
-  local script = string.format(
-    [[
-      tell application "Spotify"
-        if it is running then
-          try
-            set p to player position
-            set player position to (p + %f)
-          end try
-        end if
-      end tell
-    ]],
-    delta
-  )
-  hs.osascript.applescript(script)
-end
-
-local function spotifyToggleLike()
-  -- Try 'liked' property; fallback to 'starred' if older builds.
-  local script = [[
-    tell application "Spotify"
-      if it is running then
-        try
-          set t to current track
-          try
-            set liked of t to not (liked of t)
-          on error
-            set starred of t to not (starred of t)
-          end try
-        end try
-      end if
-    end tell
-  ]]
-  hs.osascript.applescript(script)
-end
-
---------------- Window pairing / switching -------------
-local function focusOrRestore(win)
-  if not win then
-    return false
-  end
-  local app = win:application()
-  if app and app:isHidden() then
-    app:unhide()
-  end
-  if win:isMinimized() then
-    win:unminimize()
-  end
-  if app then
-    app:activate(true)
-  end
-  hs.timer.doAfter(TAPSHOP.cfg.inputDelay, function()
-    if win then
-      win:focus()
+local wf = hs.window.filter.new()
+wf:subscribe({
+  hs.window.filter.windowFocused,
+  hs.window.filter.windowTitleChanged,
+  hs.window.filter.windowCreated,
+  hs.window.filter.windowDestroyed,
+  hs.window.filter.windowVisible,
+  hs.window.filter.windowUnminimized,
+}, function(win, appName, event)
+  pcall(function()
+    if event == hs.window.filter.windowDestroyed then
+      if win then
+        local deadId = win:id()
+        if TAPSHOP.ytTargetId and deadId == TAPSHOP.ytTargetId then
+          TAPSHOP.ytTargetId = nil
+        end
+        local changed = false
+        for _, ws in ipairs(TAPSHOP.workspaces) do
+          if ws.id == deadId then
+            ws.id = nil
+            ws.isPaired = false
+            ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+            changed = true
+          end
+        end
+        if changed then
+          CursorMsg("[Cleared pairing: window closed]")
+        end
+      end
+      return
     end
+    setYTTargetIfApplicable(win)
   end)
-  return true
-end
+end)
+
+-- =========== Window pairing ===========
 
 local function pairWindow(workspace)
   local win = hs.window.frontmostWindow()
@@ -335,12 +353,14 @@ local function pairWindow(workspace)
     CursorMsg("No active window found!")
     return
   end
+
   local currentId = win:id()
 
   if not workspace.isPaired or not workspace.id then
     workspace.id = currentId
     workspace.isPaired = true
     workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+
     local info = GetWinInfo(win)
     CursorMsg(
       string.format(
@@ -356,40 +376,22 @@ local function pairWindow(workspace)
   end
 
   if currentId ~= workspace.id then
-    -- Activate paired window (restore if minimized/hidden)
     local paired = hs.window.get(workspace.id)
     if paired then
       workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
       focusOrRestore(paired)
     else
-      -- Window truly gone: clear
       workspace.id = nil
       workspace.isPaired = false
       CursorMsg("[Paired window missing; cleared]")
     end
   else
-    -- same window pressed repeatedly: decrement buffer then minimize
     workspace.inputBuffer = workspace.inputBuffer - 1
     local paired = hs.window.get(workspace.id)
     if paired and workspace.inputBuffer <= 0 then
       workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
       paired:minimize()
     end
-  end
-end
-
-local function focusWorkspace(workspace)
-  if workspace.isPaired and workspace.id then
-    local paired = hs.window.get(workspace.id)
-    if paired then
-      focusOrRestore(paired)
-    else
-      workspace.id = nil
-      workspace.isPaired = false
-      CursorMsg("[Paired window missing; cleared]")
-    end
-  else
-    CursorMsg(workspace.label .. " not paired")
   end
 end
 
@@ -413,21 +415,29 @@ local function unpairAll()
   CursorMsg("[Unpaired All Windows]")
 end
 
---------------- YouTube control -------------
-local function sendKeyStrokes(keys)
-  -- keys: a small subset parser for "{Left}", "{Right}" or "k"/"j"/"l"
-  local special = {
-    ["{Left}"] = { {}, "left" },
-    ["{Right}"] = { {}, "right" },
-  }
-  if special[keys] then
-    hs.eventtap.keyStroke(special[keys][1], special[keys][2], 0)
-    return
+-- =========== YouTube control ===========
+
+local keyStrokeMap = {
+  ["{Left}"] = "left",
+  ["{Right}"] = "right",
+}
+
+local function sendKeyStrokes(keys, app)
+  local mapped = keyStrokeMap[keys]
+  if mapped then
+    hs.eventtap.keyStroke({}, mapped, 0, app)
+    return true
   end
-  if #keys == 1 then
-    hs.eventtap.keyStroke({}, keys, 0)
-    return
+
+  if type(keys) == "string" and #keys == 1 then
+    hs.eventtap.keyStroke({}, string.lower(keys), 0, app)
+    return true
   end
+
+  if Config.isHotkeyDebugMode then
+    hs.printf("sendKeyStrokes: unsupported key sequence: %s", tostring(keys))
+  end
+  return false
 end
 
 local function YoutubeControl(keyPress)
@@ -436,54 +446,71 @@ local function YoutubeControl(keyPress)
     CursorMsg("YouTube window not found.")
     return
   end
-  local prevApp = hs.application.frontmostApplication()
-  target:focus()
-  if target == hs.window.frontmostWindow() then
-    sleepSeconds(TAPSHOP.cfg.inputDelay)
-    sendKeyStrokes(keyPress)
-  else
-    CursorMsg("Focus failed for YT window")
+
+  local targetApp = target:application()
+  if TAPSHOP.cfg.youtubeDirectDispatch and targetApp and sendKeyStrokes(keyPress, targetApp) then
+    return
   end
-  if prevApp then
-    prevApp:activate()
+
+  local prevWin = hs.window.frontmostWindow()
+
+  if not focusOrRestore(target) then
+    CursorMsg("Focus failed for YT window")
+    return
+  end
+
+  sleepSeconds(TAPSHOP.cfg.inputDelay)
+  sendKeyStrokes(keyPress, nil)
+
+  if prevWin and prevWin:id() ~= target:id() then
+    focusOrRestore(prevWin)
   end
 end
 
--- ------------- Spotify control -------------
-local function SpotifyControl(keyPress)
-  -- Focus Spotify window and send keystrokes. Fallback method.
-  local app = hs.application.get("Spotify")
-  if not app then
-    CursorMsg("Spotify not running.")
+-- =========== Spotify control ===========
+
+local function spotifyAdjustPosition(delta)
+  local pos = hs.spotify.getPosition()
+  if type(pos) == "number" then
+    hs.spotify.setPosition(math.max(0, pos + delta))
     return
   end
-  local prevApp = hs.application.frontmostApplication()
-  app:activate(true)
-  sleepSeconds(TAPSHOP.cfg.inputDelay)
 
-  local function parseAndSend(s)
-    -- Minimal translator for the few you used in AHK:
-    if s == "!+b" then
-      -- Option+Shift+b in AHK; here we toggle Like via AppleScript
-      spotifyToggleLike()
-      return
-    elseif s == "^{Down}" then
-      hs.spotify.setVolume(math.max(0, (hs.spotify.getVolume() or 50) - 6))
-      return
-    elseif s == "^{Up}" then
-      hs.spotify.setVolume(math.min(100, (hs.spotify.getVolume() or 50) + 6))
-      return
-    end
-  end
+  local script = string.format(
+    [[
+      tell application "Spotify"
+        if it is running then
+          try
+            set p to player position
+            set player position to (p + %f)
+          end try
+        end if
+      end tell
+    ]],
+    delta
+  )
+  hs.osascript.applescript(script)
+end
 
-  parseAndSend(keyPress)
-  if prevApp then
-    prevApp:activate()
-  end
+local function spotifyToggleLike()
+  local script = [[
+    tell application "Spotify"
+      if it is running then
+        try
+          set t to current track
+          try
+            set liked of t to not (liked of t)
+          on error
+            set starred of t to not (starred of t)
+          end try
+        end try
+      end if
+    end tell
+  ]]
+  hs.osascript.applescript(script)
 end
 
 local function SpotifyControlV2(appCommand)
-  -- Native control; doesn't need window focus
   if appCommand == "APPCOMMAND_MEDIA_PREVIOUSTRACK" then
     hs.spotify.previous()
   elseif appCommand == "APPCOMMAND_MEDIA_NEXTTRACK" then
@@ -495,11 +522,22 @@ local function SpotifyControlV2(appCommand)
   elseif appCommand == "APPCOMMAND_MEDIA_FAST_FORWARD" then
     spotifyAdjustPosition(5)
   elseif appCommand == "APPCOMMAND_VOLUME_DOWN" then
-    hs.spotify.setVolume(math.max(0, (hs.spotify.getVolume() or 50) - 6))
+    pcall(function()
+      local currentVol = hs.spotify.getVolume()
+      if currentVol == nil then
+        currentVol = 50
+      end
+      hs.spotify.setVolume(math.max(0, currentVol - 6))
+    end)
   elseif appCommand == "APPCOMMAND_VOLUME_UP" then
-    hs.spotify.setVolume(math.min(100, (hs.spotify.getVolume() or 50) + 6))
+    pcall(function()
+      local currentVol = hs.spotify.getVolume()
+      if currentVol == nil then
+        currentVol = 50
+      end
+      hs.spotify.setVolume(math.min(100, currentVol + 6))
+    end)
   elseif appCommand == "APPCOMMAND_VOLUME_MUTE" then
-    -- System mute instead of Spotify mute (Spotify has no dedicated mute)
     local dev = hs.audiodevice.defaultOutputDevice()
     if dev then
       dev:setMuted(not dev:muted())
@@ -507,7 +545,8 @@ local function SpotifyControlV2(appCommand)
   end
 end
 
--- ------------- Active window info -------------
+-- =========== Active window info ===========
+
 local function DisplayActiveWindowStats()
   local info = GetWinInfo()
   if info then
@@ -527,15 +566,17 @@ local function DisplayActiveWindowStats()
   end
 end
 
---------------- Menubar helper -------------
+-- =========== Menubar ===========
+
 local menuBar = hs.menubar.new(true)
+
 local function rebuildMenu()
   local function winTitleById(id)
     local w = id and hs.window.get(id)
     if w then
       local app = w:application()
       local prefix = app and app:name() or "App"
-      local title = (w:title() or "")
+      local title = w:title() or ""
       if w:isMinimized() then
         title = title .. " (minimized)"
       end
@@ -545,48 +586,65 @@ local function rebuildMenu()
   end
 
   local items = {}
-  table.insert(items, { title = "Active Window Details…", fn = DisplayActiveWindowStats })
-  table.insert(items, { title = "-" })
+  items[#items + 1] = { title = "Active Window Details…", fn = DisplayActiveWindowStats }
+  items[#items + 1] = { title = "-" }
 
   for i, ws in ipairs(TAPSHOP.workspaces) do
-    table.insert(items, {
+    items[#items + 1] = {
       title = string.format("%d) %s -> %s", i, ws.label, winTitleById(ws.id)),
       disabled = true,
-    })
-    table.insert(items, {
+    }
+    items[#items + 1] = {
       title = "  Pair with current window",
       fn = function()
         pairWindow(ws)
         rebuildMenu()
       end,
-    })
-    table.insert(items, {
+    }
+    items[#items + 1] = {
       title = "  Unpair",
       fn = function()
         unpairWindow(ws)
         rebuildMenu()
       end,
-    })
-    table.insert(items, { title = "-" })
+    }
+    items[#items + 1] = { title = "-" }
   end
 
-  table.insert(items, {
+  items[#items + 1] = {
     title = "Unpair ALL",
     fn = function()
       unpairAll()
       rebuildMenu()
     end,
-  })
+  }
+
   menuBar:setMenu(items)
 end
 
 menuBar:setTitle("TAPSHOP")
 rebuildMenu()
 
---------------- Hotkeys (Cmd+Option for context-aware pairing) -------------
+-- =========== Hotkeys ===========
+
+local function bindIfAvailable(mods, key, fn)
+  local map = hs.keycodes.map
+  local kLower = string.lower(key)
+  if map[key] or map[kLower] then
+    hs.hotkey.bind(mods, key, fn)
+  else
+    hs.printf(
+      "Skipping hotkey: %s + %s (key not in keymap)",
+      table.concat(mods, "+"),
+      key
+    )
+  end
+end
+
 local pairMods = { "cmd", "alt" }
 local unpairMods = { "cmd", "alt", "shift" }
 local toggleMenuBar = { "cmd", "alt", "shift" }
+local hyper = { "cmd", "alt", "ctrl" }
 
 -- Cmd+Option+1..9: context-aware pair/focus/minimize
 for i = 1, 9 do
@@ -596,7 +654,7 @@ for i = 1, 9 do
   end)
 end
 
--- Cmd+Option+Shift+1..9: unpair slots; Cmd+Option+Shift+0: unpair all
+-- Cmd+Option+Shift+1..9: unpair; Cmd+Option+Shift+0: unpair all
 for i = 1, 9 do
   hs.hotkey.bind(unpairMods, tostring(i), function()
     unpairWindow(TAPSHOP.workspaces[i])
@@ -608,101 +666,59 @@ hs.hotkey.bind(unpairMods, "0", function()
   rebuildMenu()
 end)
 
--- Toggle info window (Cmd+Option+`)
-hs.hotkey.bind(pairMods, "`", function()
-  DisplayActiveWindowStats()
-end)
+-- Active window info (Cmd+Option+`)
+hs.hotkey.bind(pairMods, "`", DisplayActiveWindowStats)
 
--- Toggle menubar (Cmd+Option+Shift+`)
+-- Popup menu (Cmd+Option+Shift+`)
 hs.hotkey.bind(toggleMenuBar, "`", function()
-  print(menuBar)
   if menuBar then
-    local pt = hs.mouse.getAbsolutePosition()
-    pt.y = 22
-    menuBar:popupMenu(pt)
+    local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
+    local f = scr:fullFrame()
+    menuBar:popupMenu({ x = f.x + (f.w / 2), y = f.y + 1 })
   else
     CursorMsg("TAPSHOP menu not available")
   end
 end)
 
--- YouTube controls on Cmd+Option layer
-hs.hotkey.bind(pairMods, "left", function()
-  YoutubeControl("{Left}")
-end)
-hs.hotkey.bind(pairMods, "right", function()
-  YoutubeControl("{Right}")
-end)
-hs.hotkey.bind(pairMods, "j", function()
-  YoutubeControl("j")
-end)
-hs.hotkey.bind(pairMods, "l", function()
-  YoutubeControl("l")
-end)
-hs.hotkey.bind(pairMods, "k", function()
-  YoutubeControl("k")
-end)
+-- YouTube controls (Cmd+Option layer)
+hs.hotkey.bind(pairMods, "left",  function() YoutubeControl("{Left}") end)
+hs.hotkey.bind(pairMods, "right", function() YoutubeControl("{Right}") end)
+hs.hotkey.bind(pairMods, "j",     function() YoutubeControl("j") end)
+hs.hotkey.bind(pairMods, "l",     function() YoutubeControl("l") end)
+hs.hotkey.bind(pairMods, "k",     function() YoutubeControl("k") end)
 
--- Optional legacy F19/F20/F21 binds (kept but not required)
-bindIfAvailable({}, "F19", function()
-  YoutubeControl("{Left}")
-end)
-bindIfAvailable({ "ctrl" }, "F19", function()
-  YoutubeControl("j")
-end)
-bindIfAvailable({}, "F21", function()
-  YoutubeControl("{Right}")
-end)
-bindIfAvailable({ "ctrl" }, "F21", function()
-  YoutubeControl("l")
-end)
-bindIfAvailable({}, "F20", function()
-  YoutubeControl("k")
-end)
+-- F19/F20/F21: YouTube seek/pause (guarded)
+bindIfAvailable({},         "F19", function() YoutubeControl("{Left}")  end) -- rewind 5 sec
+bindIfAvailable({ "ctrl" }, "F19", function() YoutubeControl("j")       end) -- rewind 10 sec
+bindIfAvailable({},         "F21", function() YoutubeControl("{Right}") end) -- fast forward 5 sec
+bindIfAvailable({ "ctrl" }, "F21", function() YoutubeControl("l")       end) -- fast forward 10 sec
+bindIfAvailable({},         "F20", function() YoutubeControl("k")       end) -- play/pause
 
--- Spotify media keys (native V2)
-hs.hotkey.bind({}, "F7", function()
-  SpotifyControlV2("APPCOMMAND_MEDIA_PREVIOUSTRACK")
-end)
-hs.hotkey.bind({}, "F8", function()
-  SpotifyControlV2("APPCOMMAND_MEDIA_PLAY_PAUSE")
-end)
-hs.hotkey.bind({}, "F9", function()
-  SpotifyControlV2("APPCOMMAND_MEDIA_NEXTTRACK")
-end)
+-- Spotify media keys (guarded)
+bindIfAvailable({},         "F7", function() SpotifyControlV2("APPCOMMAND_MEDIA_PREVIOUSTRACK") end) -- skip to previous
+bindIfAvailable({},         "F8", function() SpotifyControlV2("APPCOMMAND_MEDIA_PLAY_PAUSE")    end) -- play/pause
+bindIfAvailable({},         "F9", function() SpotifyControlV2("APPCOMMAND_MEDIA_NEXTTRACK")     end) -- skip to next
 
--- Seek with Ctrl+F7/F9 (rewind/fast-forward)
-hs.hotkey.bind({ "ctrl" }, "F7", function()
-  SpotifyControlV2("APPCOMMAND_MEDIA_REWIND")
-end)
-hs.hotkey.bind({ "ctrl" }, "F9", function()
-  SpotifyControlV2("APPCOMMAND_MEDIA_FAST_FORWARD")
-end)
+-- Ctrl+F7/F9: seek backward/forward (guarded)
+bindIfAvailable({ "ctrl" }, "F7", function() SpotifyControlV2("APPCOMMAND_MEDIA_REWIND")        end)
+bindIfAvailable({ "ctrl" }, "F9", function() SpotifyControlV2("APPCOMMAND_MEDIA_FAST_FORWARD")  end)
 
--- Volume and like (guarded F-keys)
-bindIfAvailable({}, "F23", function()
-  SpotifyControlV2("APPCOMMAND_VOLUME_DOWN")
-end)
-bindIfAvailable({}, "F24", function()
-  SpotifyControlV2("APPCOMMAND_VOLUME_UP")
-end)
-bindIfAvailable({}, "F22", function()
-  spotifyToggleLike()
-end)
+-- F22/F23/F24: like + volume (guarded)
+bindIfAvailable({}, "F22", spotifyToggleLike)
+bindIfAvailable({}, "F23", function() SpotifyControlV2("APPCOMMAND_VOLUME_DOWN") end)
+bindIfAvailable({}, "F24", function() SpotifyControlV2("APPCOMMAND_VOLUME_UP")   end)
 
--- Alternate volume controls for keyboards without knobs (Hyper retained)
-local hyper = { "cmd", "alt", "ctrl" }
+-- Alternate volume controls (Hyper layer)
 hs.hotkey.bind(hyper, ",", function()
   local dev = hs.audiodevice.defaultOutputDevice()
   if dev then
-    local v = math.max(0, (dev:volume() or 25) - 5)
-    dev:setVolume(v)
+    dev:setVolume(math.max(0, (dev:volume() or 25) - 5))
   end
 end)
 hs.hotkey.bind(hyper, ".", function()
   local dev = hs.audiodevice.defaultOutputDevice()
   if dev then
-    local v = math.min(100, (dev:volume() or 25) + 5)
-    dev:setVolume(v)
+    dev:setVolume(math.min(100, (dev:volume() or 25) + 5))
   end
 end)
 hs.hotkey.bind(hyper, "M", function()
@@ -712,5 +728,4 @@ hs.hotkey.bind(hyper, "M", function()
   end
 end)
 
---------------- Init message -------------
 CursorMsg("TAPSHOP ready (Hammerspoon)")
