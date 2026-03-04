@@ -12,6 +12,7 @@ local Config = {
   focusPollMicros = 10000,     -- 10ms polling
   youtubeDirectDispatch = true,
   popoverAutoHideAfterAction = false,
+  popoverAlwaysOnTop = true,
 
   cursorMsgBottomMargin = 100,
   cursorMsgWidth = 760,
@@ -53,6 +54,12 @@ local POPOVER_AUTO_HIDE_KEY = "tapshop.popover.autoHideAfterAction"
 local storedAutoHide = hs.settings.get(POPOVER_AUTO_HIDE_KEY)
 if type(storedAutoHide) == "boolean" then
   Config.popoverAutoHideAfterAction = storedAutoHide
+end
+
+local POPOVER_ALWAYS_ON_TOP_KEY = "tapshop.popover.alwaysOnTop"
+local storedAlwaysOnTop = hs.settings.get(POPOVER_ALWAYS_ON_TOP_KEY)
+if type(storedAlwaysOnTop) == "boolean" then
+  Config.popoverAlwaysOnTop = storedAlwaysOnTop
 end
 
 -- =========== State ===========
@@ -939,12 +946,15 @@ body {
       subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">No active window found</span>"
     end
     local checked = TAPSHOP.cfg.popoverAutoHideAfterAction and "checked" or ""
+    local alwaysOnTopChecked = TAPSHOP.cfg.popoverAlwaysOnTop and "checked" or ""
 
     return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
       .. POPOVER_CSS
       .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. checked
-      .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
+      .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
+      .. alwaysOnTopChecked
+      .. " onchange=\"sendAction('setAlwaysOnTop', this.checked ? 1 : 0)\">\n              Always on top\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
       .. table.concat(subtitleLines, "\n          ")
       .. "\n      </div>\n    </div>\n"
   end
@@ -1002,6 +1012,18 @@ body {
     if escTap then escTap:stop() end
   end
 
+  local function currentPopoverLevel()
+    if TAPSHOP.cfg.popoverAlwaysOnTop then
+      return hs.drawing.windowLevels.popUpMenu
+    end
+    return hs.drawing.windowLevels.normal
+  end
+
+  local function applyPopoverLevel()
+    if not wv then return end
+    wv:level(currentPopoverLevel())
+  end
+
   local actionHandlers = {
     pair = function(body)
       local slot = tonumber(body.slot) or 0
@@ -1037,6 +1059,13 @@ body {
       local nextValue = tonumber(body.slot) == 1
       TAPSHOP.cfg.popoverAutoHideAfterAction = nextValue
       hs.settings.set(POPOVER_AUTO_HIDE_KEY, nextValue)
+      syncUi()
+    end,
+    setAlwaysOnTop = function(body)
+      local nextValue = tonumber(body.slot) == 1
+      TAPSHOP.cfg.popoverAlwaysOnTop = nextValue
+      hs.settings.set(POPOVER_ALWAYS_ON_TOP_KEY, nextValue)
+      applyPopoverLevel()
       syncUi()
     end,
     dragStart = function()
@@ -1096,13 +1125,17 @@ body {
 
     wv = hs.webview.new(rect, { developerExtrasEnabled = false }, uc)
     wv:windowStyle(hs.webview.windowMasks.borderless)
-    wv:level(hs.drawing.windowLevels.popUpMenu)
+    applyPopoverLevel()
     wv:allowNewWindows(false)
     wv:allowNavigationGestures(false)
     wv:allowTextEntry(true)
 
     wv:windowCallback(function(act, _, state)
-      if act == "focusChange" and state == false and isShown then
+      if act == "focusChange"
+        and state == false
+        and isShown
+        and not TAPSHOP.cfg.popoverAlwaysOnTop
+      then
         hide()
       end
     end)
