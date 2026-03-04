@@ -89,6 +89,14 @@ local function syncUi()
   end
 end
 
+local function runPairingAction(actionFn)
+  actionFn()
+  syncUi()
+  if TAPSHOP.cfg.popoverAutoHideAfterAction and Popover and Popover.hide then
+    Popover.hide()
+  end
+end
+
 
 -- =========== CursorMsg ===========
 
@@ -329,6 +337,18 @@ local function getYTTargetWindow()
   return nil
 end
 
+local function setWorkspacePairing(workspace, id)
+  workspace.id = id
+  workspace.isPaired = true
+  workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+end
+
+local function clearWorkspacePairing(workspace)
+  workspace.id = nil
+  workspace.isPaired = false
+  workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+end
+
 -- =========== Window event subscription ===========
 
 local wf = hs.window.filter.new()
@@ -350,9 +370,7 @@ wf:subscribe({
         local changed = false
         for _, ws in ipairs(TAPSHOP.workspaces) do
           if ws.id == deadId then
-            ws.id = nil
-            ws.isPaired = false
-            ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+            clearWorkspacePairing(ws)
             changed = true
           end
         end
@@ -379,9 +397,7 @@ local function pairWindow(workspace)
   local currentId = win:id()
 
   if not workspace.isPaired or not workspace.id then
-    workspace.id = currentId
-    workspace.isPaired = true
-    workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+    setWorkspacePairing(workspace, currentId)
 
     local info = GetWinInfo(win)
     CursorMsg(
@@ -403,8 +419,7 @@ local function pairWindow(workspace)
       workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
       focusOrRestore(paired)
     else
-      workspace.id = nil
-      workspace.isPaired = false
+      clearWorkspacePairing(workspace)
       CursorMsg("[Paired window missing; cleared]")
     end
   else
@@ -419,9 +434,7 @@ end
 
 local function unpairWindow(workspace)
   if workspace.isPaired then
-    workspace.id = nil
-    workspace.isPaired = false
-    workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+    clearWorkspacePairing(workspace)
     CursorMsg("[Unpaired " .. workspace.label .. "]")
   else
     CursorMsg(workspace.label .. " is already unpaired!")
@@ -430,9 +443,7 @@ end
 
 local function unpairAll()
   for _, ws in ipairs(TAPSHOP.workspaces) do
-    ws.id = nil
-    ws.isPaired = false
-    ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
+    clearWorkspacePairing(ws)
   end
   CursorMsg("[Unpaired All Windows]")
 end
@@ -1026,33 +1037,32 @@ body {
 
   local actionHandlers = {
     pair = function(body)
-      local slot = tonumber(body.slot) or 0
-      if slot < 1 or slot > 9 then return end
-      local ws = TAPSHOP.workspaces[slot]
-      local targetWin = activeWin or callerWin
-      if targetWin then
-        ws.id = targetWin:id()
-        ws.isPaired = true
-        ws.inputBuffer = TAPSHOP.cfg.minimizeThreshold
-        local info = GetWinInfo(targetWin)
-        CursorMsg(
-          string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
-          2.0
-        )
-      else
-        CursorMsg("No window to pair!")
-      end
-      syncUi()
+      runPairingAction(function()
+        local slot = tonumber(body.slot) or 0
+        if slot < 1 or slot > 9 then return end
+        local ws = TAPSHOP.workspaces[slot]
+        local targetWin = activeWin or callerWin
+        if targetWin then
+          setWorkspacePairing(ws, targetWin:id())
+          local info = GetWinInfo(targetWin)
+          CursorMsg(
+            string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
+            2.0
+          )
+        else
+          CursorMsg("No window to pair!")
+        end
+      end)
     end,
     unpair = function(body)
-      local slot = tonumber(body.slot) or 0
-      if slot < 1 or slot > 9 then return end
-      unpairWindow(TAPSHOP.workspaces[slot])
-      syncUi()
+      runPairingAction(function()
+        local slot = tonumber(body.slot) or 0
+        if slot < 1 or slot > 9 then return end
+        unpairWindow(TAPSHOP.workspaces[slot])
+      end)
     end,
     unpairAll = function()
-      unpairAll()
-      syncUi()
+      runPairingAction(unpairAll)
     end,
     close = function() end,
     setAutoHideAfterAction = function(body)
@@ -1105,13 +1115,6 @@ body {
       return
     end
 
-    local shouldHideAfterAction = action == "pair"
-      or action == "unpair"
-      or action == "unpairAll"
-
-    if shouldHideAfterAction and TAPSHOP.cfg.popoverAutoHideAfterAction then
-      hide()
-    end
   end
 
   local function ensureWebview()
@@ -1233,21 +1236,22 @@ local hyper = { "cmd", "alt", "ctrl" }
 -- Cmd+Option+1..9: context-aware pair/focus/minimize
 for i = 1, 9 do
   hs.hotkey.bind(pairMods, tostring(i), function()
-    pairWindow(TAPSHOP.workspaces[i])
-    syncUi()
+    runPairingAction(function()
+      pairWindow(TAPSHOP.workspaces[i])
+    end)
   end)
 end
 
 -- Cmd+Option+Shift+1..9: unpair; Cmd+Option+Shift+0: unpair all
 for i = 1, 9 do
   hs.hotkey.bind(unpairMods, tostring(i), function()
-    unpairWindow(TAPSHOP.workspaces[i])
-    syncUi()
+    runPairingAction(function()
+      unpairWindow(TAPSHOP.workspaces[i])
+    end)
   end)
 end
 hs.hotkey.bind(unpairMods, "0", function()
-  unpairAll()
-  syncUi()
+  runPairingAction(unpairAll)
 end)
 
 -- Active window info (Cmd+Option+Shift+`)
