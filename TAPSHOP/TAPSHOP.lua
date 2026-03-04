@@ -631,16 +631,21 @@ rebuildMenu()
 -- slot-buttons, btn, btn-primary, btn-unpair, footer, footer-btn, footer-info,
 -- footer-danger, footer-close
 
-local Popover = (function()
+Popover = (function()
   local wv = nil
   local uc = nil
   local escTap = nil
   local callerWin = nil
   local isShown = false
   local isDragging = false
+  local POSITION_SETTINGS_KEY = "tapshop.popover.topLeft"
 
   local POP_W = 500
   local POP_H = 410
+  local savedTopLeft = hs.settings.get(POSITION_SETTINGS_KEY)
+  local hasSavedPosition = type(savedTopLeft) == "table"
+    and type(savedTopLeft.x) == "number"
+    and type(savedTopLeft.y) == "number"
 
   local POPOVER_CSS = [=[
 * {
@@ -909,6 +914,27 @@ body {
     return table.concat(parts)
   end
 
+  local function centeredRect(screen)
+    local vf = screen:frame()
+    return hs.geometry.rect(
+      math.floor(vf.x + (vf.w - POP_W) / 2),
+      math.floor(vf.y + (vf.h - POP_H) / 2),
+      POP_W,
+      POP_H
+    )
+  end
+
+  local function saveTopLeftFromFrame()
+    if not wv then return end
+    local frame = wv:frame()
+    savedTopLeft = {
+      x = math.floor(frame.x),
+      y = math.floor(frame.y),
+    }
+    hasSavedPosition = true
+    hs.settings.set(POSITION_SETTINGS_KEY, savedTopLeft)
+  end
+
   local function hide()
     if not isShown then return end
     isDragging = false
@@ -982,6 +1008,7 @@ body {
     end,
     dragEnd = function()
       isDragging = false
+      saveTopLeftFromFrame()
     end,
   }
 
@@ -1006,13 +1033,7 @@ body {
     uc:setCallback(handleAction)
 
     local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
-    local vf = scr:frame()
-    local rect = hs.geometry.rect(
-      math.floor(vf.x + (vf.w - POP_W) / 2),
-      vf.y + 4,
-      POP_W,
-      POP_H
-    )
+    local rect = centeredRect(scr)
 
     wv = hs.webview.new(rect, { developerExtrasEnabled = false }, uc)
     wv:windowStyle(hs.webview.windowMasks.borderless)
@@ -1033,13 +1054,11 @@ body {
     ensureWebview()
 
     local scr = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
-    local vf = scr:frame()
-    wv:frame(hs.geometry.rect(
-      math.floor(vf.x + (vf.w - POP_W) / 2),
-      vf.y + 4,
-      POP_W,
-      POP_H
-    ))
+    if hasSavedPosition then
+      wv:frame(hs.geometry.rect(savedTopLeft.x, savedTopLeft.y, POP_W, POP_H))
+    else
+      wv:frame(centeredRect(scr))
+    end
 
     wv:html(buildHtml())
     wv:show()
