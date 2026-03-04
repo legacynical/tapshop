@@ -75,6 +75,13 @@ local TAPSHOP = {
 for i = 1, 9 do
   TAPSHOP.workspaces[#TAPSHOP.workspaces + 1] = Workspace("Window " .. tostring(i))
 end
+local Popover = nil
+local function syncUi()
+  if Popover and Popover.refreshIfShown then
+    Popover.refreshIfShown()
+  end
+end
+
 
 -- =========== CursorMsg ===========
 
@@ -344,7 +351,7 @@ wf:subscribe({
         end
         if changed then
           CursorMsg("[Cleared pairing: window closed]")
-          rebuildMenu()
+          syncUi()
         end
       end
       return
@@ -574,10 +581,6 @@ local function DisplayActiveWindowStats()
   end
 end
 
--- =========== Menubar ===========
-
-local menuBar = hs.menubar.new(true)
-
 local function winTitleById(id)
   local w = id and hs.window.get(id)
   if w then
@@ -592,62 +595,18 @@ local function winTitleById(id)
   return "[Unpaired]"
 end
 
-local Popover
-
-local function rebuildMenu()
-  local items = {}
-  items[#items + 1] = { title = "Active Window Details…", fn = DisplayActiveWindowStats }
-  items[#items + 1] = { title = "-" }
-
-  for i, ws in ipairs(TAPSHOP.workspaces) do
-    items[#items + 1] = {
-      title = string.format("%d) %s", i, winTitleById(ws.id)),
-      disabled = true,
-    }
-    items[#items + 1] = {
-      title = "  Pair with current window",
-      fn = function()
-        pairWindow(ws)
-        rebuildMenu()
-        Popover.refreshIfShown()
-      end,
-    }
-    items[#items + 1] = {
-      title = "  Unpair",
-      fn = function()
-        unpairWindow(ws)
-        rebuildMenu()
-        Popover.refreshIfShown()
-      end,
-    }
-    items[#items + 1] = { title = "-" }
-  end
-
-  items[#items + 1] = {
-    title = "Unpair ALL",
-    fn = function()
-      unpairAll()
-      rebuildMenu()
-      Popover.refreshIfShown()
-    end,
-  }
-
-  menuBar:setMenu(items)
-end
-
-menuBar:setTitle("TAPSHOP")
-rebuildMenu()
 
 -- =========== Popover ===========
--- Classes: container, header, title, row, slot-num, slot-label, paired, unpaired,
--- slot-buttons, btn, btn-primary, btn-unpair, footer, footer-btn, footer-info,
--- footer-danger, footer-close
+-- Classes: container, header, title-wrap, title, header-details, subtitle-line, row, slot-num,
+-- slot-label, paired, unpaired, slot-buttons, btn, btn-primary, btn-unpair, footer,
+-- footer-btn, footer-danger, footer-close
 
 Popover = (function()
   local wv = nil
   local uc = nil
   local escTap = nil
   local callerWin = nil
+  local activeWin = nil
   local isShown = false
   local isDragging = false
   local POSITION_SETTINGS_KEY = "tapshop.popover.topLeft"
@@ -972,36 +931,25 @@ body {
       else
         CursorMsg("No window to pair!")
       end
-      rebuildMenu()
+      syncUi()
     end,
     unpair = function(body)
       local slot = tonumber(body.slot) or 0
       if slot < 1 or slot > 9 then return end
       unpairWindow(TAPSHOP.workspaces[slot])
-      rebuildMenu()
+      syncUi()
     end,
     unpairAll = function()
       unpairAll()
-      rebuildMenu()
-    end,
-    info = function()
-      if callerWin then
-        local info = GetWinInfo(callerWin)
-        if info then
-          hs.dialog.blockAlert(
-            "Active Window",
-            string.format(
-              "Title: %s\nID: %s\nApp: %s\nBundleID: %s",
-              info.title, tostring(info.id), info.appName, info.bundleID
-            ),
-            "OK", "", "informational"
-          )
-        end
-      else
-        DisplayActiveWindowStats()
-      end
+      syncUi()
     end,
     close = function() end,
+    setAutoHideAfterAction = function(body)
+      local nextValue = tonumber(body.slot) == 1
+      TAPSHOP.cfg.popoverAutoHideAfterAction = nextValue
+      hs.settings.set(POPOVER_AUTO_HIDE_KEY, nextValue)
+      syncUi()
+    end,
     dragStart = function()
       isDragging = true
     end,
@@ -1029,12 +977,22 @@ body {
     local action = body.action
     local isDragAction = action == "dragStart" or action == "dragMove" or action == "dragEnd"
 
-    if not isDragAction then
-      hide()
-    end
-
     if actionHandlers[action] then
       actionHandlers[action](body)
+    end
+
+    if isDragAction then return end
+    if action == "close" then
+      hide()
+      return
+    end
+
+    local shouldHideAfterAction = action == "pair"
+      or action == "unpair"
+      or action == "unpairAll"
+
+    if shouldHideAfterAction and TAPSHOP.cfg.popoverAutoHideAfterAction then
+      hide()
     end
   end
 
@@ -1101,8 +1059,24 @@ body {
     end
   end
 
-  return { toggle = toggle, show = show, hide = hide, refreshIfShown = refreshIfShown }
+  return {
+    toggle = toggle,
+    show = show,
+    hide = hide,
+    refreshIfShown = refreshIfShown,
+    updateActiveWindow = updateActiveWindow,
+  }
 end)()
+
+local popoverWindowTracker = hs.window.filter.new()
+popoverWindowTracker:subscribe({
+  hs.window.filter.windowFocused,
+  hs.window.filter.windowTitleChanged,
+}, function(win)
+  pcall(function()
+    Popover.updateActiveWindow(win)
+  end)
+end)
 
 -- =========== Hotkeys ===========
 
@@ -1138,14 +1112,12 @@ end
 for i = 1, 9 do
   hs.hotkey.bind(unpairMods, tostring(i), function()
     unpairWindow(TAPSHOP.workspaces[i])
-    rebuildMenu()
-    Popover.refreshIfShown()
+    syncUi()
   end)
 end
 hs.hotkey.bind(unpairMods, "0", function()
   unpairAll()
-  rebuildMenu()
-  Popover.refreshIfShown()
+  syncUi()
 end)
 
 -- Active window info (Cmd+Option+Shift+`)
