@@ -15,10 +15,10 @@ local Config = {
   popoverAlwaysOnTop = true,
   popoverBackgroundOpacity = 0.85,
 
-  cursorMsgBottomMargin = 100,
-  cursorMsgWidth = 760,
-  cursorMsgTextSize = 14,
-  cursorMsgMaxLines = 25,
+  tapshopMsgBottomMargin = 100,
+  tapshopMsgWidth = 760,
+  tapshopMsgTextSize = 14,
+  tapshopMsgMaxLines = 25,
 
   browserBundleIDs = {
     ["com.apple.Safari"] = true,
@@ -109,9 +109,9 @@ local function runPairingAction(actionFn)
 end
 
 
--- =========== CursorMsg ===========
+-- =========== TapshopMsg ===========
 
-local CursorMsg = (function()
+local TapshopMsg = (function()
   local lines = {}
   local timer = nil
   local bg = nil
@@ -126,14 +126,14 @@ local CursorMsg = (function()
   local function computeRects(lineCount)
     local scr = pickScreen()
     local vf = scr:frame()
-    local w = Config.cursorMsgWidth
-    local textSize = Config.cursorMsgTextSize
+    local w = Config.tapshopMsgWidth
+    local textSize = Config.tapshopMsgTextSize
     local padding = 14
     local lineHeight = math.floor(textSize * 1.35)
     local h = padding * 2 + (lineCount * lineHeight)
 
     local x = math.floor(vf.x + (vf.w - w) / 2)
-    local y = math.floor(vf.y + vf.h - Config.cursorMsgBottomMargin - h)
+    local y = math.floor(vf.y + vf.h - Config.tapshopMsgBottomMargin - h)
 
     local rect = hs.geometry.rect(x, y, w, h)
     local textRect = hs.geometry.rect(
@@ -185,7 +185,7 @@ local CursorMsg = (function()
 
     if not txt then
       txt = hs.drawing.text(textRect, text)
-      txt:setTextSize(Config.cursorMsgTextSize)
+      txt:setTextSize(Config.tapshopMsgTextSize)
       txt:setTextColor({ white = 1, alpha = 1 })
       txt:setLevel(hs.drawing.windowLevels.popUpMenu)
       txt:setBehavior(hs.drawing.windowBehaviors.canJoinAllSpaces)
@@ -210,7 +210,7 @@ local CursorMsg = (function()
   return function(msg, secs)
     secs = secs or 2.0
     lines[#lines + 1] = tostring(msg)
-    if #lines > Config.cursorMsgMaxLines then
+    if #lines > Config.tapshopMsgMaxLines then
       table.remove(lines, 1)
     end
     render(secs)
@@ -325,7 +325,7 @@ local function setYTTargetIfApplicable(win)
     local id = win:id()
     if TAPSHOP.ytTargetId ~= id then
       TAPSHOP.ytTargetId = id
-      CursorMsg("YT Target Updated: " .. (win:title() or "[untitled]"))
+      TapshopMsg("YT Target Updated: " .. (win:title() or "[untitled]"))
     end
   end
 end
@@ -392,7 +392,7 @@ wf:subscribe({
           end
         end
         if changed then
-          CursorMsg("[Cleared pairing: window closed]")
+          TapshopMsg("[Cleared pairing: window closed]")
           syncUi()
         end
       end
@@ -408,7 +408,7 @@ end)
 local function pairWindow(workspace)
   local win = hs.window.frontmostWindow()
   if not win then
-    CursorMsg("No active window found!")
+    TapshopMsg("No active window found!")
     return
   end
 
@@ -418,7 +418,7 @@ local function pairWindow(workspace)
     setWorkspacePairing(workspace, currentId, win)
 
     local info = GetWinInfo(win)
-    CursorMsg(
+    TapshopMsg(
       string.format(
         "[Pairing %s]\n%s\nid:%s\napp:%s",
         workspace.label,
@@ -439,7 +439,7 @@ local function pairWindow(workspace)
       refreshWorkspaceDisplayTitle(workspace, paired)
     else
       clearWorkspacePairing(workspace)
-      CursorMsg("[Paired window missing; cleared]")
+      TapshopMsg("[Paired window missing; cleared]")
     end
   else
     workspace.inputBuffer = workspace.inputBuffer - 1
@@ -454,9 +454,9 @@ end
 local function unpairWindow(workspace)
   if workspace.isPaired then
     clearWorkspacePairing(workspace)
-    CursorMsg("[Unpaired " .. workspace.label .. "]")
+    TapshopMsg("[Unpaired " .. workspace.label .. "]")
   else
-    CursorMsg(workspace.label .. " is already unpaired!")
+    TapshopMsg(workspace.label .. " is already unpaired!")
   end
 end
 
@@ -464,7 +464,7 @@ local function unpairAll()
   for _, ws in ipairs(TAPSHOP.workspaces) do
     clearWorkspacePairing(ws)
   end
-  CursorMsg("[Unpaired All Windows]")
+  TapshopMsg("[Unpaired All Windows]")
 end
 
 -- =========== YouTube control ===========
@@ -495,7 +495,7 @@ end
 local function YoutubeControl(keyPress)
   local target = getYTTargetWindow()
   if not target then
-    CursorMsg("YouTube window not found.")
+    TapshopMsg("YouTube window not found.")
     return
   end
 
@@ -507,7 +507,7 @@ local function YoutubeControl(keyPress)
   local prevWin = hs.window.frontmostWindow()
 
   if not focusOrRestore(target) then
-    CursorMsg("Focus failed for YT window")
+    TapshopMsg("Focus failed for YT window")
     return
   end
 
@@ -599,25 +599,6 @@ end
 
 -- =========== Active window info ===========
 
-local function DisplayActiveWindowStats()
-  local info = GetWinInfo()
-  if info then
-    hs.dialog.blockAlert(
-      "Active Window",
-      string.format(
-        "Title: %s\nID: %s\nApp: %s\nBundleID: %s",
-        info.title,
-        tostring(info.id),
-        info.appName,
-        info.bundleID
-      ),
-      "OK",
-      "",
-      "informational"
-    )
-  end
-end
-
 local function windowDisplayTitle(win)
   if not win then
     return "[empty]"
@@ -677,9 +658,6 @@ end
 
 
 -- =========== Popover ===========
--- Classes: container, header, title-wrap, title, header-details, subtitle-line, row, slot-num,
--- slot-label, paired, unpaired, slot-buttons, btn, btn-primary, btn-unpair, footer,
--- footer-btn, footer-danger, footer-close
 
 Popover = (function()
   local wv = nil
@@ -1193,12 +1171,12 @@ body {
         if targetWin then
           setWorkspacePairing(ws, targetWin:id(), targetWin)
           local info = GetWinInfo(targetWin)
-          CursorMsg(
+          TapshopMsg(
             string.format("[Pairing %s]\n%s", ws.label, info and info.title or "[unknown]"),
             2.0
           )
         else
-          CursorMsg("No window to pair!")
+          TapshopMsg("No window to pair!")
         end
       end)
     end,
@@ -1433,9 +1411,6 @@ hs.hotkey.bind(unpairMods, "0", function()
   runPairingAction(unpairAll)
 end)
 
--- Active window info (Cmd+Option+Shift+`)
-hs.hotkey.bind(unpairMods, "`", DisplayActiveWindowStats)
-
 -- Popover toggle (Cmd+Option+`)
 hs.hotkey.bind(pairMods, "`", function()  Popover.toggle() end)
 
@@ -1487,4 +1462,4 @@ hs.hotkey.bind(hyper, "M", function()
   end
 end)
 
-CursorMsg("TAPSHOP ready (Hammerspoon)")
+TapshopMsg("TAPSHOP ready (Hammerspoon)")
