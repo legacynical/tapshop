@@ -93,7 +93,9 @@ for i = 1, 9 do
 end
 local Popover = nil
 local function syncUi()
-  if Popover and Popover.refreshIfShown then
+  if Popover and Popover.refreshCache then
+    Popover.refreshCache()
+  elseif Popover and Popover.refreshIfShown then
     Popover.refreshIfShown()
   end
 end
@@ -687,6 +689,8 @@ Popover = (function()
   local activeWin = nil
   local isShown = false
   local isDragging = false
+  local cachedHtml = nil
+  local isHtmlDirty = true
   local POSITION_SETTINGS_KEY = "tapshop.popover.topLeft"
 
   local POP_W = 500
@@ -1121,6 +1125,17 @@ body {
     return table.concat(parts)
   end
 
+  local function renderHtml()
+    if not wv then return end
+    cachedHtml = buildHtml()
+    isHtmlDirty = false
+    wv:html(cachedHtml)
+  end
+
+  local function markHtmlDirty()
+    isHtmlDirty = true
+  end
+
   local function centeredRect(screen)
     local vf = screen:frame()
     return hs.geometry.rect(
@@ -1299,7 +1314,9 @@ body {
       wv:frame(centeredRect(scr))
     end
 
-    wv:html(buildHtml())
+    if isHtmlDirty or not cachedHtml then
+      renderHtml()
+    end
     wv:show()
     isShown = true
 
@@ -1316,8 +1333,26 @@ body {
   end
 
   local function refreshIfShown()
-    if not isShown or not wv then return end
-    wv:html(buildHtml())
+    if not wv then
+      markHtmlDirty()
+      return
+    end
+
+    if not isShown then
+      markHtmlDirty()
+      return
+    end
+
+    renderHtml()
+  end
+
+  local function refreshCache()
+    if not wv then
+      markHtmlDirty()
+      return
+    end
+
+    renderHtml()
   end
 
   local function updateActiveWindow(win)
@@ -1342,6 +1377,7 @@ body {
     show = show,
     hide = hide,
     refreshIfShown = refreshIfShown,
+    refreshCache = refreshCache,
     updateActiveWindow = updateActiveWindow,
   }
 end)()
