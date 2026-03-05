@@ -13,6 +13,7 @@ local Config = {
   youtubeDirectDispatch = true,
   popoverAutoHideAfterAction = false,
   popoverAlwaysOnTop = true,
+  popoverBackgroundOpacity = 0.85,
 
   cursorMsgBottomMargin = 100,
   cursorMsgWidth = 760,
@@ -60,6 +61,13 @@ local POPOVER_ALWAYS_ON_TOP_KEY = "tapshop.popover.alwaysOnTop"
 local storedAlwaysOnTop = hs.settings.get(POPOVER_ALWAYS_ON_TOP_KEY)
 if type(storedAlwaysOnTop) == "boolean" then
   Config.popoverAlwaysOnTop = storedAlwaysOnTop
+end
+
+local POPOVER_BG_OPACITY_KEY = "tapshop.popover.backgroundOpacity"
+local storedBgOpacity = hs.settings.get(POPOVER_BG_OPACITY_KEY)
+if type(storedBgOpacity) == "number" and storedBgOpacity >= 0.40 and storedBgOpacity <= 1.00 then
+  local snapped = math.floor((storedBgOpacity * 100) / 10 + 0.5) * 10
+  Config.popoverBackgroundOpacity = math.max(40, math.min(100, snapped)) / 100
 end
 
 -- =========== State ===========
