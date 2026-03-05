@@ -690,7 +690,7 @@ Popover = (function()
   local POSITION_SETTINGS_KEY = "tapshop.popover.topLeft"
 
   local POP_W = 500
-  local POP_H = 410
+  local POP_H = 424
   local savedTopLeft = hs.settings.get(POSITION_SETTINGS_KEY)
   local hasSavedPosition = type(savedTopLeft) == "table"
     and type(savedTopLeft.x) == "number"
@@ -705,7 +705,7 @@ Popover = (function()
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  background: #1e1e1e;
+  background: transparent;
   color: #e0e0e0;
   font-size: 13px;
   -webkit-user-select: none;
@@ -713,7 +713,15 @@ body {
 }
 
 .container {
+  height: 100%;
   padding: 12px;
+  background: __POPOVER_BG__;
+  -webkit-backdrop-filter: blur(10px) saturate(115%);
+  backdrop-filter: blur(10px) saturate(115%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
 }
 
 .header {
@@ -767,7 +775,7 @@ body {
 .slot-num {
   width: 18px;
   text-align: right;
-  color: #666;
+  color: #fff;
   font-size: 11px;
   font-weight: 600;
   margin-right: 8px;
@@ -776,11 +784,23 @@ body {
 
 .slot-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.slot-text-bg {
+  display: inline-block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 8px;
-  font-size: 12px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.14);
+  -webkit-backdrop-filter: blur(1.5px);
+  backdrop-filter: blur(1.5px);
+  border-radius: 999px;
 }
 
 .paired {
@@ -819,10 +839,12 @@ body {
 .btn-primary {
   background: #2d6ee6;
   color: #fff;
+  opacity: 0.9;
 }
 
 .btn-primary:hover {
   background: #4080f0;
+  opacity: 1;
 }
 
 .btn-unpair {
@@ -864,10 +886,12 @@ body {
 .footer-danger {
   background: #a03020;
   color: #fff;
+  opacity: 0.9;
 }
 
 .footer-danger:hover {
   background: #c04030;
+  opacity: 1;
 }
 
 .footer-close {
@@ -918,6 +942,25 @@ body {
 
 .config-item input {
   accent-color: #2d6ee6;
+}
+
+.config-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.config-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #c6c6c6;
+}
+
+.config-slider {
+  width: 100%;
 }
 
 .config-trigger {
@@ -998,6 +1041,13 @@ body {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") sendAction("close");
   });
+
+  var configMenu = document.querySelector(".config-menu");
+  document.addEventListener("mousedown", function (e) {
+    if (!configMenu || !configMenu.hasAttribute("open")) return;
+    if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
+    configMenu.removeAttribute("open");
+  });
 </script>
 </body>
 </html>]=]
@@ -1022,14 +1072,19 @@ body {
     end
     local checked = TAPSHOP.cfg.popoverAutoHideAfterAction and "checked" or ""
     local alwaysOnTopChecked = TAPSHOP.cfg.popoverAlwaysOnTop and "checked" or ""
+    local opacityPercent = math.floor((TAPSHOP.cfg.popoverBackgroundOpacity or 0.85) * 100 + 0.5)
+    local popoverBgCss = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100)
+    local renderedCss = POPOVER_CSS:gsub("__POPOVER_BG__", popoverBgCss)
 
     return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
-      .. POPOVER_CSS
+      .. renderedCss
       .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. checked
       .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. alwaysOnTopChecked
-      .. " onchange=\"sendAction('setAlwaysOnTop', this.checked ? 1 : 0)\">\n              Always on top\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
+      .. " onchange=\"sendAction('setAlwaysOnTop', this.checked ? 1 : 0)\">\n              Always on top\n            </label>\n            <div class=\"config-slider-wrap\">\n              <div class=\"config-slider-row\">\n                <span>Background opacity</span>\n              </div>\n              <input class=\"config-slider\" type=\"range\" min=\"40\" max=\"100\" step=\"10\" value=\""
+      .. tostring(opacityPercent)
+      .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
       .. table.concat(subtitleLines, "\n          ")
       .. "\n      </div>\n    </div>\n"
   end
@@ -1049,7 +1104,7 @@ body {
     local off = isPaired and "" or " off"
     return "    <div class=\"row\">\n"
       .. "      <span class=\"slot-num\">" .. i .. "</span>\n"
-      .. "      <span class=\"slot-label " .. cls .. "\">" .. title .. "</span>\n"
+      .. "      <span class=\"slot-label " .. cls .. "\"><span class=\"slot-text-bg\">" .. title .. "</span></span>\n"
       .. "      <div class=\"slot-buttons\">\n"
       .. "        <button class=\"btn btn-primary\" onclick=\"sendAction('pair'," .. i .. ")\">Pair</button>\n"
       .. "        <button class=\"btn btn-unpair" .. off .. "\" onclick=\"sendAction('unpair'," .. i .. ")\">Unpair</button>\n"
@@ -1107,6 +1162,12 @@ body {
     wv:level(currentPopoverLevel())
   end
 
+  local function clampPopoverOpacityPercent(value)
+    if value < 40 then return 40 end
+    if value > 100 then return 100 end
+    return value
+  end
+
   local actionHandlers = {
     pair = function(body)
       runPairingAction(function()
@@ -1148,6 +1209,15 @@ body {
       TAPSHOP.cfg.popoverAlwaysOnTop = nextValue
       hs.settings.set(POPOVER_ALWAYS_ON_TOP_KEY, nextValue)
       applyPopoverLevel()
+      syncUi()
+    end,
+    setPopoverOpacity = function(body)
+      local rawPercent = tonumber(body.slot)
+      if not rawPercent then return end
+      local clampedPercent = clampPopoverOpacityPercent(math.floor(rawPercent / 10 + 0.5) * 10)
+      local nextOpacity = clampedPercent / 100
+      TAPSHOP.cfg.popoverBackgroundOpacity = nextOpacity
+      hs.settings.set(POPOVER_BG_OPACITY_KEY, nextOpacity)
       syncUi()
     end,
     dragStart = function()
@@ -1200,6 +1270,7 @@ body {
 
     wv = hs.webview.new(rect, { developerExtrasEnabled = false }, uc)
     wv:windowStyle(hs.webview.windowMasks.borderless)
+    wv:transparent(true)
     applyPopoverLevel()
     wv:allowNewWindows(false)
     wv:allowNavigationGestures(false)
