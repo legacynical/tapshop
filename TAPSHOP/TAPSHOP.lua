@@ -70,7 +70,7 @@ local function Workspace(label)
     id = nil,
     isPaired = false,
     inputBuffer = Config.minimizeThreshold,
-    displayTitle = "[Unpaired]",
+    displayTitle = "[empty]",
   }
 end
 
@@ -352,7 +352,7 @@ local function clearWorkspacePairing(workspace)
   workspace.id = nil
   workspace.isPaired = false
   workspace.inputBuffer = TAPSHOP.cfg.minimizeThreshold
-  workspace.displayTitle = "[Unpaired]"
+  workspace.displayTitle = "[empty]"
 end
 
 -- =========== Window event subscription ===========
@@ -610,7 +610,7 @@ end
 
 local function windowDisplayTitle(win)
   if not win then
-    return "[Unpaired]"
+    return "[empty]"
   end
   local app = win:application()
   local prefix = app and app:name() or "App"
@@ -626,7 +626,7 @@ refreshWorkspaceDisplayTitle = function(workspace, win)
     return
   end
   if not workspace.id then
-    workspace.displayTitle = "[Unpaired]"
+    workspace.displayTitle = "[empty]"
     return
   end
 
@@ -638,7 +638,7 @@ refreshWorkspaceDisplayTitle = function(workspace, win)
   if target then
     workspace.displayTitle = windowDisplayTitle(target)
   else
-    workspace.displayTitle = "[Unpaired]"
+    workspace.displayTitle = "[empty]"
   end
 end
 
@@ -662,7 +662,7 @@ end
 local function winTitleById(id)
   local w = id and hs.window.get(id)
   if w then return windowDisplayTitle(w) end
-  return "[Unpaired]"
+  return "[empty]"
 end
 
 
