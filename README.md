@@ -96,7 +96,6 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 | `Cmd + Option + Shift + [1-9]` | Unpair slot `[1-9]` |
 | `Cmd + Option + Shift + 0` | Unpair all slots |
 | `Cmd + Option + \`` | Toggle popover UI |
-| `Cmd + Option + Shift + \`` | Show active window stats |
 | `Cmd + Option + Left/J` | YouTube rewind `5s` / `10s` |
 | `Cmd + Option + Right/L` | YouTube forward `5s` / `10s` |
 | `Cmd + Option + K` | YouTube play/pause |
