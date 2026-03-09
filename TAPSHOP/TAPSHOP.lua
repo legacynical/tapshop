@@ -14,6 +14,7 @@ local Config = {
   popoverAutoHideAfterAction = false,
   popoverAlwaysOnTop = true,
   popoverBackgroundOpacity = 0.85,
+  popoverDebugWindow = false,
 
   tapshopMsgBottomMargin = 100,
   tapshopMsgWidth = 760,
@@ -70,6 +71,12 @@ if type(storedBgOpacity) == "number" and storedBgOpacity >= 0.40 and storedBgOpa
   Config.popoverBackgroundOpacity = math.max(40, math.min(100, snapped)) / 100
 end
 
+local POPOVER_DEBUG_WINDOW_KEY = "tapshop.popover.debugWindow"
+local storedDebugWindow = hs.settings.get(POPOVER_DEBUG_WINDOW_KEY)
+if type(storedDebugWindow) == "boolean" then
+  Config.popoverDebugWindow = storedDebugWindow
+end
+
 -- =========== State ===========
 
 local function Workspace(label)
@@ -92,11 +99,15 @@ for i = 1, 9 do
   TAPSHOP.workspaces[#TAPSHOP.workspaces + 1] = Workspace("Window " .. tostring(i))
 end
 local Popover = nil
+local DebugWindow = nil
 local function syncUi()
   if Popover and Popover.refreshCache then
     Popover.refreshCache()
   elseif Popover and Popover.refreshIfShown then
     Popover.refreshIfShown()
+  end
+  if DebugWindow and DebugWindow.syncVisibility then
+    DebugWindow.syncVisibility()
   end
 end
 
@@ -400,6 +411,9 @@ wf:subscribe({
     end
     refreshPairedWorkspaceTitlesForWindow(win)
     setYTTargetIfApplicable(win)
+    if TAPSHOP.cfg.popoverDebugWindow and DebugWindow and DebugWindow.refreshIfShown then
+      DebugWindow.refreshIfShown()
+    end
   end)
 end)
 
@@ -960,6 +974,7 @@ body {
   background: #3a3a3a;
   color: #c0c0c0;
 }
+
 ]=]
 
   local POPOVER_FOOTER = [=[
@@ -1054,6 +1069,7 @@ body {
     end
     local checked = TAPSHOP.cfg.popoverAutoHideAfterAction and "checked" or ""
     local alwaysOnTopChecked = TAPSHOP.cfg.popoverAlwaysOnTop and "checked" or ""
+    local debugWindowChecked = TAPSHOP.cfg.popoverDebugWindow and "checked" or ""
     local opacityPercent = math.floor((TAPSHOP.cfg.popoverBackgroundOpacity or 0.85) * 100 + 0.5)
     local popoverBgCss = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100)
     local renderedCss = POPOVER_CSS:gsub("__POPOVER_BG__", popoverBgCss)
@@ -1066,7 +1082,9 @@ body {
       .. alwaysOnTopChecked
       .. " onchange=\"sendAction('setAlwaysOnTop', this.checked ? 1 : 0)\">\n              Always on top\n            </label>\n            <div class=\"config-slider-wrap\">\n              <div class=\"config-slider-row\">\n                <span>Background opacity</span>\n              </div>\n              <input class=\"config-slider\" type=\"range\" min=\"40\" max=\"100\" step=\"10\" value=\""
       .. tostring(opacityPercent)
-      .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
+      .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n            <label class=\"config-item\" style=\"margin-top: 8px;\">\n              <input type=\"checkbox\" "
+      .. debugWindowChecked
+      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug Window\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
       .. table.concat(subtitleLines, "\n          ")
       .. "\n      </div>\n    </div>\n"
   end
@@ -1213,6 +1231,12 @@ body {
       hs.settings.set(POPOVER_BG_OPACITY_KEY, nextOpacity)
       syncUi()
     end,
+    setDebugWindow = function(body)
+      local nextValue = tonumber(body.slot) == 1
+      TAPSHOP.cfg.popoverDebugWindow = nextValue
+      hs.settings.set(POPOVER_DEBUG_WINDOW_KEY, nextValue)
+      syncUi()
+    end,
     dragStart = function()
       isDragging = true
     end,
@@ -1342,6 +1366,14 @@ body {
     refreshIfShown()
   end
 
+  local function getDebugState()
+    return {
+      isShown = isShown,
+      callerWindow = GetWinInfo(callerWin),
+      activeWindow = GetWinInfo(activeWin),
+    }
+  end
+
   local function toggle()
     if isShown then
       hide()
@@ -1357,6 +1389,243 @@ body {
     refreshIfShown = refreshIfShown,
     refreshCache = refreshCache,
     updateActiveWindow = updateActiveWindow,
+    getDebugState = getDebugState,
+  }
+end)()
+
+-- =========== Debug Window ===========
+
+DebugWindow = (function()
+  local wv = nil
+  local uc = nil
+  local isShown = false
+  local cachedHtml = nil
+  local isHtmlDirty = true
+
+  local DEBUG_W = 620
+  local DEBUG_H = 360
+
+  local function formatWindowDebug(index, w, includeFlags)
+    local app = w and w:application() or nil
+    local fields = {
+      string.format("id = %s", tostring(w and w:id() or nil)),
+      string.format("title = %q", tostring(w and w:title() or "")),
+      string.format("app = %q", tostring(app and app:name() or "")),
+      string.format("bundleID = %q", tostring(app and app:bundleID() or "")),
+    }
+    if includeFlags and w then
+      fields[#fields + 1] = string.format("visible = %s", tostring(w:isVisible()))
+      fields[#fields + 1] = string.format("standard = %s", tostring(w:isStandard()))
+      fields[#fields + 1] = string.format("minimized = %s", tostring(w:isMinimized()))
+    end
+    return string.format("[%d] { %s }", index, table.concat(fields, ", "))
+  end
+
+  local function candidateWindowsDebugText()
+    local lines = {}
+    local wins = candidateWindows()
+    for i, w in ipairs(wins) do
+      lines[#lines + 1] = formatWindowDebug(i, w, false)
+    end
+    if #lines == 0 then
+      return "candidateWindows = []"
+    end
+    return "candidateWindows = [\n" .. table.concat(lines, ",\n") .. "\n]"
+  end
+
+  local function orderedWindowsDebugText()
+    local lines = {}
+    local wins = hs.window.orderedWindows()
+    for i, w in ipairs(wins) do
+      lines[#lines + 1] = formatWindowDebug(i, w, true)
+    end
+    if #lines == 0 then
+      return "orderedWindows = []"
+    end
+    return "orderedWindows = [\n" .. table.concat(lines, ",\n") .. "\n]"
+  end
+
+  local function windowInfoLine(label, info)
+    if not info then
+      return label .. " = nil"
+    end
+    return string.format(
+      "%s = { id = %s, title = %q, app = %q, bundleID = %q }",
+      label,
+      tostring(info.id),
+      tostring(info.title or ""),
+      tostring(info.appName or ""),
+      tostring(info.bundleID or "")
+    )
+  end
+
+  local function miscDebugText()
+    local lines = {}
+    local frontmostInfo = GetWinInfo(hs.window.frontmostWindow())
+    local popoverState = (Popover and Popover.getDebugState) and Popover.getDebugState() or nil
+    local ytTargetInfo = TAPSHOP.ytTargetId and GetWinInfo(hs.window.get(TAPSHOP.ytTargetId)) or nil
+
+    lines[#lines + 1] = windowInfoLine("frontmostWindow", frontmostInfo)
+    lines[#lines + 1] = windowInfoLine("activeWindow", popoverState and popoverState.activeWindow or nil)
+    lines[#lines + 1] = windowInfoLine("callerWindow", popoverState and popoverState.callerWindow or nil)
+    lines[#lines + 1] = windowInfoLine("targetWindow", ytTargetInfo)
+    lines[#lines + 1] = string.format("popoverShown = %s", tostring(popoverState and popoverState.isShown or false))
+    lines[#lines + 1] = string.format("ytTargetId = %s", tostring(TAPSHOP.ytTargetId))
+
+    return table.concat(lines, "\n")
+  end
+
+  local function centeredRect()
+    local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
+    local vf = screen:frame()
+    return hs.geometry.rect(
+      math.floor(vf.x + (vf.w - DEBUG_W) / 2),
+      math.floor(vf.y + (vf.h - DEBUG_H) / 2),
+      DEBUG_W,
+      DEBUG_H
+    )
+  end
+
+  local function escapeHtml(s)
+    return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
+  end
+
+  local function buildHtml()
+    local candidateText = escapeHtml(candidateWindowsDebugText())
+    local orderedText = escapeHtml(orderedWindowsDebugText())
+    local miscText = escapeHtml(miscDebugText())
+    return "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<style>\n"
+      .. "* { box-sizing: border-box; }\n"
+      .. "body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, \"SF Pro Text\", sans-serif; background: #111; color: #ddd; }\n"
+      .. ".container { height: 100vh; display: flex; flex-direction: column; padding: 12px; gap: 10px; }\n"
+      .. ".header { display: flex; align-items: center; justify-content: space-between; }\n"
+      .. ".title { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: #f1f1f1; }\n"
+      .. ".close { border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; background: #333; color: #bdbdbd; cursor: pointer; }\n"
+      .. ".close:hover { background: #444; color: #e0e0e0; }\n"
+      .. ".tabs { display: flex; gap: 6px; }\n"
+      .. ".tab { border: 1px solid #2f2f2f; border-radius: 6px; padding: 4px 8px; font-size: 11px; background: #1b1b1b; color: #bcbcbc; cursor: pointer; }\n"
+      .. ".tab.active { background: #24406f; color: #eef4ff; border-color: #3f62a0; }\n"
+      .. ".panel { flex: 1; min-height: 0; display: none; }\n"
+      .. ".panel.active { display: block; }\n"
+      .. ".payload { height: 100%; margin: 0; padding: 10px; border-radius: 8px; border: 1px solid #2c2c2c; background: #0b0b0b; overflow: auto; white-space: pre-wrap; font-size: 11px; line-height: 1.4; color: #8fd79c; }\n"
+      .. "</style>\n</head>\n<body>\n"
+      .. "<div class=\"container\">\n"
+      .. "  <div class=\"header\">\n"
+      .. "    <span class=\"title\">DEBUG WINDOW</span>\n"
+      .. "    <button class=\"close\" onclick=\"sendAction('disableDebugWindow')\">Close</button>\n"
+      .. "  </div>\n"
+      .. "  <div class=\"tabs\">\n"
+      .. "    <button class=\"tab active\" data-tab=\"candidateWindows\">candidateWindows</button>\n"
+      .. "    <button class=\"tab\" data-tab=\"orderedWindows\">orderedWindows</button>\n"
+      .. "    <button class=\"tab\" data-tab=\"misc\">misc</button>\n"
+      .. "  </div>\n"
+      .. "  <div class=\"panel active\" data-panel=\"candidateWindows\"><pre class=\"payload\">" .. candidateText .. "</pre></div>\n"
+      .. "  <div class=\"panel\" data-panel=\"orderedWindows\"><pre class=\"payload\">" .. orderedText .. "</pre></div>\n"
+      .. "  <div class=\"panel\" data-panel=\"misc\"><pre class=\"payload\">" .. miscText .. "</pre></div>\n"
+      .. "</div>\n"
+      .. "<script>\n"
+      .. "function sendAction(action){ window.webkit.messageHandlers.tapshopDebugWindow.postMessage({ action: action }); }\n"
+      .. "var tabs = document.querySelectorAll('.tab');\n"
+      .. "var panels = document.querySelectorAll('.panel');\n"
+      .. "function setActiveTab(name){\n"
+      .. "  tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.tab === name); });\n"
+      .. "  panels.forEach(function(p){ p.classList.toggle('active', p.dataset.panel === name); });\n"
+      .. "}\n"
+      .. "tabs.forEach(function(tab){ tab.addEventListener('click', function(){ setActiveTab(tab.dataset.tab); }); });\n"
+      .. "document.addEventListener('keydown', function(e){ if (e.key === 'Escape') sendAction('disableDebugWindow'); });\n"
+      .. "</script>\n"
+      .. "</body>\n</html>"
+  end
+
+  local function renderHtml()
+    if not wv then return end
+    cachedHtml = buildHtml()
+    isHtmlDirty = false
+    wv:html(cachedHtml)
+  end
+
+  local function markHtmlDirty()
+    isHtmlDirty = true
+  end
+
+  local function hide()
+    if not isShown then return end
+    isShown = false
+    if wv then wv:hide() end
+  end
+
+  local function handleAction(msg)
+    local body = msg.body or {}
+    if body.action == "disableDebugWindow" then
+      TAPSHOP.cfg.popoverDebugWindow = false
+      hs.settings.set(POPOVER_DEBUG_WINDOW_KEY, false)
+      syncUi()
+      return
+    end
+  end
+
+  local function ensureWebview()
+    if wv then return end
+    uc = hs.webview.usercontent.new("tapshopDebugWindow")
+    uc:setCallback(handleAction)
+    wv = hs.webview.new(centeredRect(), { developerExtrasEnabled = false }, uc)
+    wv:windowStyle(
+      hs.webview.windowMasks.titled
+      + hs.webview.windowMasks.closable
+      + hs.webview.windowMasks.miniaturizable
+      + hs.webview.windowMasks.resizable
+    )
+    wv:transparent(false)
+    wv:level(hs.drawing.windowLevels.floating)
+    wv:allowNewWindows(false)
+    wv:allowNavigationGestures(false)
+    wv:allowTextEntry(false)
+    wv:windowCallback(function(act)
+      if act == "closing" then
+        isShown = false
+        if TAPSHOP.cfg.popoverDebugWindow then
+          TAPSHOP.cfg.popoverDebugWindow = false
+          hs.settings.set(POPOVER_DEBUG_WINDOW_KEY, false)
+          if Popover and Popover.refreshIfShown then
+            Popover.refreshIfShown()
+          end
+        end
+      end
+    end)
+  end
+
+  local function show()
+    ensureWebview()
+    if isHtmlDirty or not cachedHtml then
+      renderHtml()
+    end
+    wv:show()
+    isShown = true
+  end
+
+  local function refreshIfShown()
+    if not wv then
+      markHtmlDirty()
+      return
+    end
+    if not isShown then
+      markHtmlDirty()
+      return
+    end
+    renderHtml()
+  end
+
+  local function syncVisibility()
+    if TAPSHOP.cfg.popoverDebugWindow then
+      show()
+      return
+    end
+    hide()
+  end
+
+  return {
+    refreshIfShown = refreshIfShown,
+    syncVisibility = syncVisibility,
   }
 end)()
 
@@ -1367,6 +1636,9 @@ popoverWindowTracker:subscribe({
 }, function(win)
   pcall(function()
     Popover.updateActiveWindow(win)
+    if TAPSHOP.cfg.popoverDebugWindow and DebugWindow and DebugWindow.refreshIfShown then
+      DebugWindow.refreshIfShown()
+    end
   end)
 end)
 
