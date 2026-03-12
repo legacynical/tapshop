@@ -30,11 +30,11 @@
 ### Running with AHK Installation
 
 1. Install [AutoHotkey v2.0](https://www.autohotkey.com/)
-2. Run `TAPSHOP/TAPSHOP.ahk`
+2. Run `TAPSHOP-windows/TAPSHOP.ahk`
 
 ### Running without AHK Installation
 
-This repository ships source scripts. If you want a standalone `.exe`, compile `TAPSHOP/TAPSHOP.ahk` with AutoHotkey v2's compiler (`Ahk2Exe`).
+This repository ships source scripts. If you want a standalone `.exe`, compile `TAPSHOP-windows/TAPSHOP.ahk` with AutoHotkey v2's compiler (`Ahk2Exe`).
 
 > [!TIP]
 > - Place script ahk/exe (or shortcut) in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` to autorun on startup.
@@ -74,7 +74,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 ### Setup
 
 1. Install [Hammerspoon](https://www.hammerspoon.org/)
-2. Copy or symlink `TAPSHOP/TAPSHOP.lua` into your `~/.hammerspoon/` directory
+2. Copy or symlink `TAPSHOP-macos/TAPSHOP.lua` into your `~/.hammerspoon/` directory
 3. Add `require("TAPSHOP")` to your `~/.hammerspoon/init.lua`
 4. Reload Hammerspoon config (⌘ + ⇧ + R from menu bar, or `hs.reload()`)
 
@@ -88,7 +88,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 
 > **macOS:** Refer to Hammerspoon's [hs.hotkey](https://www.hammerspoon.org/docs/hs.hotkey.html) documentation.
 
-### macOS (`TAPSHOP/TAPSHOP.lua`)
+### macOS (`TAPSHOP-macos/TAPSHOP.lua`)
 
 | Hotkey | Action |
 |---|---|
@@ -134,8 +134,8 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 
 | Path | Purpose |
 |---|---|
-| `TAPSHOP/TAPSHOP.ahk` | Main Windows implementation (AHK v2) |
-| `TAPSHOP/TAPSHOP.lua` | Main macOS implementation (Hammerspoon) |
+| `TAPSHOP-windows/TAPSHOP.ahk` | Main Windows implementation (AHK v2) |
+| `TAPSHOP-macos/TAPSHOP.lua` | Main macOS implementation (Hammerspoon) |
 | `GYTP-AHKv2-media-keys` | Legacy media-key-focused script |
 | `GYTP-AHKv2-keyboard-75` | Legacy 75% keyboard variant |
 | `GYTP-AHKv1.1-deprecated` | Legacy AHK v1.1 script |
