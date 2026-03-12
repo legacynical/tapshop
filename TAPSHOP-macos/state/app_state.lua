@@ -3,6 +3,9 @@ local configModule = require("config")
 
 local AppState = {}
 AppState.__index = AppState
+local PAIR_TOAST_COLOR = { red = 0x7e / 255, green = 0xc8 / 255, blue = 0x7e / 255, alpha = 1 }
+local UNPAIR_TOAST_COLOR = { red = 0xc0 / 255, green = 0x40 / 255, blue = 0x30 / 255, alpha = 1 }
+local TOAST_WHITE = { white = 1, alpha = 1 }
 
 local function clampOpacityPercent(value)
   if value < 40 then
@@ -123,26 +126,31 @@ function AppState:_pairWorkspace(workspace, windowId, win)
 end
 
 function AppState:_formatPairToast(workspace, win)
-  local info = self.windowService.getWindowInfo(win)
-  if not info then
+  local label = self.windowService.displayTitle(win)
+  if label == "[empty]" then
     return string.format("[Pairing %s]", workspace.label)
   end
+  return {
+    prefix = false,
+    segments = {
+      { text = string.format("Pairing %s: ", workspace.label), color = TOAST_WHITE },
+      { text = label, color = PAIR_TOAST_COLOR },
+    },
+  }
+end
 
-  local title = info.title ~= "" and info.title or "[untitled]"
-  local processName = info.processName ~= "" and info.processName
-    or (info.appName ~= "" and info.appName or "[unknown]")
-  local processLine = processName
-  if info.pid then
-    processLine = string.format("%s (pid:%s)", processLine, tostring(info.pid))
+function AppState:_formatUnpairToast(workspace, win)
+  local label = self.windowService.displayTitle(win)
+  if label == "[empty]" then
+    label = workspace.displayTitle or "[empty]"
   end
-
-  return string.format(
-    "[Pairing %s]\ntitle: %s\nprocess: %s\nwindow id: %s",
-    workspace.label,
-    title,
-    processLine,
-    tostring(info.id)
-  )
+  return {
+    prefix = false,
+    segments = {
+      { text = string.format("Unpairing %s: ", workspace.label), color = TOAST_WHITE },
+      { text = label, color = UNPAIR_TOAST_COLOR },
+    },
+  }
 end
 
 function AppState:_clearWorkspace(workspace)
@@ -217,8 +225,10 @@ function AppState:unpairSlot(index)
 
   self:_runPairingAction(function()
     if workspace:isPaired() then
+      local win = self.windowService.getWindowById(workspace.id)
+      local toastPayload = self:_formatUnpairToast(workspace, win)
       self:_clearWorkspace(workspace)
-      self.toast("[Unpaired " .. workspace.label .. "]")
+      self.toast(toastPayload)
     else
       self.toast(workspace.label .. " is already unpaired!")
     end

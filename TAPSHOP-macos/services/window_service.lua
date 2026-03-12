@@ -43,8 +43,8 @@ function WindowService.displayTitle(win)
   local app = win:application()
   local prefix = app and app:name() or "App"
   local title = win:title() or ""
-  if win:isMinimized() then
-    title = title .. " (minimized)"
+  if title == "" then
+    title = "[untitled]"
   end
 
   return "[" .. prefix .. "] " .. title
