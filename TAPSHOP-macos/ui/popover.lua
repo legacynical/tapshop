@@ -17,9 +17,11 @@ function Popover.new(app, cfg, deps)
   local savedSize = settingsStore.getSize(configModule.keys.popoverSize)
 
   local POP_W = 500
-  local POP_H = 424
+  local POP_H = 272
   local POP_MIN_W = 320
-  local POP_MIN_H = 280
+  local POP_MIN_H = 268
+  local POP_MAX_H = 408
+  local POP_SCREEN_MARGIN = 32
 
   local POPOVER_CSS = [=[
 * {
@@ -31,6 +33,8 @@ function Popover.new(app, cfg, deps)
 :root {
   --ui-scale: 1;
 }
+
+__DEBUG_CSS__
 
 html, body {
   width: 100%;
@@ -52,7 +56,7 @@ body {
   flex-direction: column;
   gap: calc(8px * var(--ui-scale));
   height: 100%;
-  padding: calc(12px * var(--ui-scale));
+  padding: calc(14px * var(--ui-scale));
   background: __POPOVER_BG__;
   -webkit-backdrop-filter: blur(10px) saturate(115%);
   backdrop-filter: blur(10px) saturate(115%);
@@ -64,66 +68,83 @@ body {
 
 .header {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  flex-wrap: nowrap;
   align-items: flex-start;
-  gap: calc(12px * var(--ui-scale));
+  gap: calc(10px * var(--ui-scale));
   padding-bottom: calc(10px * var(--ui-scale));
   border-bottom: 1px solid #333;
   cursor: move;
 }
 
 .header .title-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  flex: 1 1 180px;
-  gap: calc(6px * var(--ui-scale));
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+  flex: 0 0 auto;
 }
 
 .header .title {
-  display: block;
   font-weight: 700;
   font-size: calc(14px * var(--ui-scale));
   color: #fff;
   letter-spacing: 0.5px;
+  line-height: 1.1;
 }
 
 .header .header-details {
-  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: calc(3px * var(--ui-scale));
+  flex: 1 1 180px;
   min-width: 0;
-  max-width: 100%;
-  margin-left: auto;
-  text-align: right;
 }
 
-.header .subtitle-line {
+.header .header-primary {
   display: block;
   max-width: 100%;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
   font-size: calc(11px * var(--ui-scale));
+  font-weight: 600;
+  color: #fff;
+}
+
+.header .header-secondary {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+  font-size: calc(7px * var(--ui-scale));
   color: #9aa0a6;
 }
 
+.header .header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: calc(6px * var(--ui-scale));
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .workspace-list {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
   display: grid;
-  grid-template-rows: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(9, auto);
   gap: calc(3px * var(--ui-scale));
-  overflow: hidden;
+  align-content: start;
 }
 
 .row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: calc(8px * var(--ui-scale));
+  flex-wrap: nowrap;
+  gap: calc(4px * var(--ui-scale));
   min-height: 0;
-  padding: calc(3px * var(--ui-scale)) 0;
 }
 
 .slot-num {
@@ -137,8 +158,11 @@ body {
 }
 
 .slot-label {
-  flex: 1 1 170px;
-  min-width: 140px;
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--ui-scale));
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   font-size: calc(12px * var(--ui-scale));
 }
@@ -154,6 +178,7 @@ body {
   -webkit-backdrop-filter: blur(1.5px);
   backdrop-filter: blur(1.5px);
   border-radius: 999px;
+  min-width: 0;
 }
 
 .paired {
@@ -169,11 +194,26 @@ body {
   font-style: italic;
 }
 
+.min-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(1px * var(--ui-scale)) calc(5px * var(--ui-scale));
+  border-radius: 999px;
+  background: rgba(231, 200, 79, 0.16);
+  border: 1px solid rgba(231, 200, 79, 0.32);
+  color: #e7c84f;
+  font-size: calc(9px * var(--ui-scale));
+  font-weight: 700;
+  letter-spacing: 0.35px;
+  flex-shrink: 0;
+}
+
 .slot-buttons {
   display: flex;
   gap: calc(4px * var(--ui-scale));
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin-left: auto;
 }
 
@@ -216,15 +256,7 @@ body {
   pointer-events: none;
 }
 
-.footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(6px * var(--ui-scale));
-  padding-top: calc(10px * var(--ui-scale));
-  border-top: 1px solid #333;
-}
-
-.footer-btn {
+.header-btn {
   border: none;
   border-radius: calc(4px * var(--ui-scale));
   padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
@@ -234,28 +266,27 @@ body {
   transition: opacity 0.12s;
 }
 
-.footer-btn:active {
+.header-btn:active {
   opacity: 0.6;
 }
 
-.footer-danger {
+.header-danger {
   background: #a03020;
   color: #fff;
   opacity: 0.9;
 }
 
-.footer-danger:hover {
+.header-danger:hover {
   background: #c04030;
   opacity: 1;
 }
 
-.footer-close {
+.header-close {
   background: #2a2a2a;
   color: #777;
-  margin-left: auto;
 }
 
-.footer-close:hover {
+.header-close:hover {
   background: #3a3a3a;
   color: #aaa;
 }
@@ -275,7 +306,7 @@ body {
 .config-panel {
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
   margin-top: calc(6px * var(--ui-scale));
   min-width: 245px;
   max-width: min(280px, calc(100vw - 24px));
@@ -325,39 +356,130 @@ body {
   padding: calc(5px * var(--ui-scale)) calc(10px * var(--ui-scale));
   font-size: calc(11px * var(--ui-scale));
   font-weight: 600;
-  background: #2a2a2a;
-  color: #999;
+  background: #4b4b4b;
+  color: #d2d2d2;
   cursor: pointer;
 }
 
 .config-trigger:hover {
-  background: #3a3a3a;
-  color: #c0c0c0;
-}
-
-@media (max-width: 420px) {
-  .header .header-details {
-    margin-left: 0;
-    text-align: left;
-  }
-
-  .slot-buttons {
-    width: 100%;
-    margin-left: calc(26px * var(--ui-scale));
-  }
+  background: #5a5a5a;
+  color: #f0f0f0;
 }
 
 ]=]
 
-  local POPOVER_FOOTER = [=[
-  </div>
-  <div class="footer">
-    <button class="footer-btn footer-danger" onclick="sendAction('unpairAll')">
-      Unpair ALL
-    </button>
-    <button class="footer-btn footer-close" onclick="sendAction('close')">
-      Close
-    </button>
+  local POPOVER_DEBUG_CSS = [=[
+.container {
+  outline: 1px solid rgba(255, 255, 255, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.workspace-list {
+  outline: 1px solid rgba(255, 0, 255, 0.9);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.row {
+  outline: 1px solid rgba(255, 140, 0, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.slot-num {
+  outline: 1px solid rgba(255, 80, 80, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.slot-label {
+  outline: 1px solid rgba(0, 220, 255, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.slot-text-bg {
+  outline: 1px solid rgba(0, 255, 120, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.min-badge {
+  outline: 1px solid rgba(255, 230, 0, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.slot-buttons {
+  outline: 1px solid rgba(180, 120, 255, 0.95);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.container::before,
+.workspace-list::before,
+.row::before,
+.slot-num::before,
+.slot-label::before,
+.slot-text-bg::before,
+.min-badge::before,
+.slot-buttons::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0 calc(3px * var(--ui-scale));
+  font-size: calc(7px * var(--ui-scale));
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  color: #111;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.container::before {
+  content: "container";
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.workspace-list::before {
+  content: "workspace-list grid";
+  background: rgba(255, 0, 255, 0.9);
+}
+
+.row::before {
+  content: "row flex";
+  background: rgba(255, 140, 0, 0.95);
+}
+
+.slot-num::before {
+  content: "slot-num";
+  background: rgba(255, 80, 80, 0.95);
+}
+
+.slot-label::before {
+  content: "slot-label flex";
+  background: rgba(0, 220, 255, 0.95);
+}
+
+.slot-text-bg::before {
+  content: "slot-text-bg pill";
+  background: rgba(0, 255, 120, 0.95);
+}
+
+.min-badge::before {
+  content: "min-badge";
+  background: rgba(255, 230, 0, 0.95);
+}
+
+.slot-buttons::before {
+  content: "slot-buttons";
+  background: rgba(180, 120, 255, 0.95);
+}
+]=]
+
+  local POPOVER_SUFFIX = [=[
   </div>
 </div>
 <script>
@@ -373,16 +495,58 @@ body {
     });
   }
 
-  var BASE_WIDTH = 500;
-  var BASE_HEIGHT = 424;
+  var MIN_UI_SCALE = 0.5;
+  var MAX_UI_SCALE = 1.5;
   var RESIZE_ZONE = 10;
 
-  function updateUiScale() {
-    var widthScale = window.innerWidth / BASE_WIDTH;
-    var heightScale = window.innerHeight / BASE_HEIGHT;
-    var scale = Math.min(1, widthScale, heightScale);
-    scale = Math.max(0.6, scale);
+  function setUiScale(scale) {
     document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
+  }
+
+  function readPx(value) {
+    return parseFloat(value || "0") || 0;
+  }
+
+  function measureContentHeightAtScale(scale) {
+    var container = document.querySelector(".container");
+    var header = document.querySelector(".header");
+    var workspaceList = document.querySelector(".workspace-list");
+    if (!container || !header || !workspaceList) return 0;
+
+    setUiScale(scale);
+    void container.offsetHeight;
+
+    var containerStyle = window.getComputedStyle(container);
+    var gap = readPx(containerStyle.rowGap || containerStyle.gap);
+
+    return header.getBoundingClientRect().height
+      + workspaceList.getBoundingClientRect().height
+      + gap
+      + readPx(containerStyle.paddingTop)
+      + readPx(containerStyle.paddingBottom)
+      + readPx(containerStyle.borderTopWidth)
+      + readPx(containerStyle.borderBottomWidth);
+  }
+
+  function updateUiScale() {
+    var baseHeight = measureContentHeightAtScale(1);
+    var maxHeight = measureContentHeightAtScale(MAX_UI_SCALE);
+    if (!baseHeight || !maxHeight || maxHeight <= baseHeight) {
+      setUiScale(1);
+      return;
+    }
+
+    var scalableHeight = (maxHeight - baseHeight) / (MAX_UI_SCALE - 1);
+    if (scalableHeight <= 0) {
+      setUiScale(1);
+      return;
+    }
+
+    var fixedHeight = baseHeight - scalableHeight;
+    var scale = (window.innerHeight - fixedHeight) / scalableHeight;
+    scale = Math.min(MAX_UI_SCALE, scale);
+    scale = Math.max(MIN_UI_SCALE, scale);
+    setUiScale(scale);
   }
 
   function getResizeDirection(e) {
@@ -446,7 +610,11 @@ body {
   if (header) {
     header.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
-      if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
+      if (
+        e.target
+        && e.target.closest
+        && e.target.closest(".config-menu, .header-actions, button, input, label, summary")
+      ) return;
       dragState.active = true;
       dragState.lastX = e.screenX;
       dragState.lastY = e.screenY;
@@ -522,15 +690,31 @@ body {
 </body>
 </html>]=]
 
-  local function currentPopoverSize()
+  local function pickScreen()
+    return hs.mouse.getCurrentScreen()
+      or (activeWin and activeWin:screen())
+      or (callerWin and callerWin:screen())
+      or hs.screen.mainScreen()
+  end
+
+  local function maxPopoverHeight(screen)
+    local visibleFrame = screen:frame()
+    return math.max(POP_MIN_H, math.min(POP_MAX_H, math.floor(visibleFrame.h - POP_SCREEN_MARGIN)))
+  end
+
+  local function clampPopoverHeight(height, screen)
+    return math.max(POP_MIN_H, math.min(height, maxPopoverHeight(screen or pickScreen())))
+  end
+
+  local function currentPopoverSize(screen)
     return {
       w = math.max(POP_MIN_W, savedSize and savedSize.w or POP_W),
-      h = math.max(POP_MIN_H, savedSize and savedSize.h or POP_H),
+      h = clampPopoverHeight(POP_H, screen),
     }
   end
 
   local function centeredRect(screen)
-    local size = currentPopoverSize()
+    local size = currentPopoverSize(screen)
     local visibleFrame = screen:frame()
     return hs.geometry.rect(
       math.floor(visibleFrame.x + (visibleFrame.w - size.w) / 2),
@@ -560,7 +744,7 @@ body {
     local frame = panel:getWebview():frame()
     savedSize = {
       w = math.max(POP_MIN_W, math.floor(frame.w)),
-      h = math.max(POP_MIN_H, math.floor(frame.h)),
+      h = POP_H,
     }
     settingsStore.setSize(configModule.keys.popoverSize, savedSize)
   end
@@ -569,17 +753,20 @@ body {
     local info = windowService.getWindowInfo(activeWin)
       or windowService.getWindowInfo(callerWin)
       or windowService.getWindowInfo()
-    local subtitleLines = {}
+    local primaryLine = "No active window found"
+    local secondaryLine = ""
     if info then
-      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
-        .. html.escape(info.title) .. "</span>"
-      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
-        .. html.escape(string.format("%s (%s)", info.appName, info.bundleID))
-        .. "</span>"
-      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">"
-        .. html.escape("Window ID: " .. tostring(info.id)) .. "</span>"
-    else
-      subtitleLines[#subtitleLines + 1] = "<span class=\"subtitle-line\">No active window found</span>"
+      local rawTitle = info.title or ""
+      local title = rawTitle:match("%S") and rawTitle or "[untitled]"
+      local windowId = tostring(info.id or "?")
+      local appName = info.appName or ""
+
+      primaryLine = title
+      if appName:match("%S") then
+        secondaryLine = string.format("%s (%s)", appName, windowId)
+      else
+        secondaryLine = string.format("(%s)", windowId)
+      end
     end
 
     local checked = cfg.popoverAutoHideAfterAction and "checked" or ""
@@ -587,11 +774,18 @@ body {
     local debugWindowChecked = cfg.popoverDebugWindow and "checked" or ""
     local opacityPercent = math.floor((cfg.popoverBackgroundOpacity or 0.85) * 100 + 0.5)
     local popoverBgCss = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100)
-    local renderedCss = POPOVER_CSS:gsub("__POPOVER_BG__", popoverBgCss)
+    local debugCss = cfg.popoverDebugWindow and POPOVER_DEBUG_CSS or ""
+    local renderedCss = POPOVER_CSS
+      :gsub("__POPOVER_BG__", popoverBgCss)
+      :gsub("__DEBUG_CSS__", debugCss)
 
     return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
       .. renderedCss
-      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
+      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">"
+      .. html.escape(primaryLine)
+      .. "</span>\n        <span class=\"header-secondary\">"
+      .. html.escape(secondaryLine)
+      .. "</span>\n      </div>\n      <div class=\"header-actions\">\n        <button class=\"header-btn header-danger\" onclick=\"sendAction('unpairAll')\">Unpair ALL</button>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. checked
       .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. alwaysOnTopChecked
@@ -599,28 +793,50 @@ body {
       .. tostring(opacityPercent)
       .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n            <label class=\"config-item\" style=\"margin-top: 8px;\">\n              <input type=\"checkbox\" "
       .. debugWindowChecked
-      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug Window\n            </label>\n          </div>\n        </details>\n      </div>\n      <div class=\"header-details\">\n        "
-      .. table.concat(subtitleLines, "\n          ")
-      .. "\n      </div>\n    </div>\n    <div class=\"workspace-list\">\n"
+      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug\n            </label>\n          </div>\n        </details>\n        <button class=\"header-btn header-close\" onclick=\"sendAction('close')\">Close</button>\n      </div>\n    </div>\n    <div class=\"workspace-list\">\n"
+  end
+
+  local function slotLabel(workspace, pairedWin)
+    if not workspace:isPaired() then
+      return "[empty]"
+    end
+
+    if pairedWin then
+      local info = windowService.getWindowInfo(pairedWin)
+      if info then
+        local appName = info.appName or ""
+        local rawTitle = info.title or ""
+        local title = rawTitle:match("%S") and rawTitle or "[untitled]"
+        if appName:match("%S") then
+          return string.format("[%s] %s", appName, title)
+        end
+      end
+    end
+
+    return workspace.displayTitle or "[empty]"
   end
 
   local function rowHtml(index, workspace)
-    local title = html.escape(workspace.displayTitle or "[empty]")
     local isPaired = workspace:isPaired()
+    local pairedWin = nil
+    local isMinimized = false
     local className = "unpaired"
     if isPaired then
-      local pairedWin = windowService.getWindowById(workspace.id)
-      if pairedWin and pairedWin:isMinimized() then
+      pairedWin = windowService.getWindowById(workspace.id)
+      isMinimized = pairedWin and pairedWin:isMinimized() or false
+      if isMinimized then
         className = "paired-minimized"
       else
         className = "paired"
       end
     end
     local offClass = isPaired and "" or " off"
+    local title = html.escape(slotLabel(workspace, pairedWin))
+    local minBadge = isMinimized and "<span class=\"min-badge\">MIN</span>" or ""
 
     return "    <div class=\"row\">\n"
       .. "      <span class=\"slot-num\">" .. index .. "</span>\n"
-      .. "      <span class=\"slot-label " .. className .. "\"><span class=\"slot-text-bg\">" .. title .. "</span></span>\n"
+      .. "      <span class=\"slot-label " .. className .. "\"><span class=\"slot-text-bg\">" .. title .. "</span>" .. minBadge .. "</span>\n"
       .. "      <div class=\"slot-buttons\">\n"
       .. "        <button class=\"btn btn-primary\" onclick=\"sendAction('pair'," .. index .. ")\">Pair</button>\n"
       .. "        <button class=\"btn btn-unpair" .. offClass .. "\" onclick=\"sendAction('unpair'," .. index .. ")\">Unpair</button>\n"
@@ -633,7 +849,7 @@ body {
     for index, workspace in ipairs(app:getWorkspaces()) do
       parts[#parts + 1] = rowHtml(index, workspace)
     end
-    parts[#parts + 1] = POPOVER_FOOTER
+    parts[#parts + 1] = POPOVER_SUFFIX
     return table.concat(parts)
   end
 
@@ -704,10 +920,10 @@ body {
         end
 
         if direction:find("n", 1, true) then
-          nextH = math.max(POP_MIN_H, frame.h - dh)
+          nextH = clampPopoverHeight(frame.h - dh)
           nextY = frame.y + (frame.h - nextH)
         elseif direction:find("s", 1, true) then
-          nextH = math.max(POP_MIN_H, frame.h + dh)
+          nextH = clampPopoverHeight(frame.h + dh)
         end
 
         panelRef:getWebview():frame(hs.geometry.rect(nextX, nextY, nextW, nextH))
