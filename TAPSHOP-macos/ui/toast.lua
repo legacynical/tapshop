@@ -5,6 +5,30 @@ function Toast.new(cfg)
   local timer = nil
   local background = nil
   local textBox = nil
+  local defaultTextColor = { white = 1, alpha = 1 }
+  local prefixColor = { white = 1, alpha = 0.55 }
+
+  local function styledChunk(text, color)
+    return hs.styledtext.new(tostring(text), {
+      color = color or defaultTextColor,
+      font = {
+        name = ".AppleSystemUIFont",
+        size = cfg.tapshopMsgTextSize,
+      },
+    })
+  end
+
+  local function normalizeLine(entry)
+    if type(entry) == "table" and type(entry.segments) == "table" then
+      return entry
+    end
+    return {
+      prefix = true,
+      segments = {
+        { text = tostring(entry), color = defaultTextColor },
+      },
+    }
+  end
 
   local function pickScreen()
     return hs.mouse.getCurrentScreen()
@@ -47,15 +71,24 @@ function Toast.new(cfg)
   end
 
   local function render(secs)
-    local buf = {}
+    local styledText = nil
     for i = 1, #lines do
-      local prefix = (i == #lines) and "> " or "  "
-      buf[#buf + 1] = prefix .. tostring(lines[i])
+      local line = normalizeLine(lines[i])
+      if styledText then
+        styledText = styledText .. styledChunk("\n", defaultTextColor)
+      end
+      if line.prefix ~= false then
+        local prefix = (i == #lines) and "> " or "  "
+        styledText = (styledText or styledChunk("", defaultTextColor)) .. styledChunk(prefix, prefixColor)
+      end
+      for _, segment in ipairs(line.segments) do
+        styledText = (styledText or styledChunk("", defaultTextColor))
+          .. styledChunk(segment.text or "", segment.color)
+      end
     end
 
-    local text = table.concat(buf, "\n")
-    if text == "" then
-      text = " "
+    if not styledText then
+      styledText = styledChunk(" ", defaultTextColor)
     end
 
     local rect, textRect = computeRects(#lines)
@@ -72,14 +105,13 @@ function Toast.new(cfg)
     end
 
     if not textBox then
-      textBox = hs.drawing.text(textRect, text)
+      textBox = hs.drawing.text(textRect, styledText)
       textBox:setTextSize(cfg.tapshopMsgTextSize)
-      textBox:setTextColor({ white = 1, alpha = 1 })
       textBox:setLevel(hs.drawing.windowLevels.popUpMenu)
       textBox:setBehavior(hs.drawing.windowBehaviors.canJoinAllSpaces)
     else
       textBox:setFrame(textRect)
-      textBox:setText(text)
+      textBox:setStyledText(styledText)
     end
 
     background:show()
@@ -96,7 +128,7 @@ function Toast.new(cfg)
   end
 
   return function(msg, secs)
-    lines[#lines + 1] = tostring(msg)
+    lines[#lines + 1] = msg
     if #lines > cfg.tapshopMsgMaxLines then
       table.remove(lines, 1)
     end
