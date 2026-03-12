@@ -1,5 +1,6 @@
 /my-setup
 /exports
+/docs
 .prettierignore
 .DS_Store
 .cursor
