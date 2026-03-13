@@ -69,7 +69,7 @@ body {
 .header {
   display: flex;
   flex-wrap: nowrap;
-  align-items: flex-start;
+  align-items: center;
   gap: calc(10px * var(--ui-scale));
   padding-bottom: calc(7px * var(--ui-scale));
   border-bottom: 1px solid #333;
@@ -81,14 +81,59 @@ body {
   align-items: center;
   gap: calc(8px * var(--ui-scale));
   flex: 0 0 auto;
+  align-self: stretch;
 }
 
 .header .title {
+  display: inline-flex;
+  align-items: center;
   font-weight: 700;
   font-size: calc(14px * var(--ui-scale));
   color: #fff;
   letter-spacing: 0.5px;
   line-height: 1.1;
+}
+
+.header .title-trigger,
+.header .title-hop {
+  display: inline-block;
+}
+
+.header .title-trigger {
+  cursor: pointer;
+  user-select: none;
+}
+
+.header .title-hop {
+  transform-origin: center bottom;
+}
+
+.header .title-hop.is-hopping {
+  animation: hop-cartoon 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes hop-cartoon {
+  0% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+  }
+  12% {
+    transform: translateY(1px) scaleX(1.15) scaleY(0.84);
+  }
+  32% {
+    transform: translateY(calc(-13px * var(--ui-scale))) scaleX(0.88) scaleY(1.18);
+  }
+  46% {
+    transform: translateY(calc(-19px * var(--ui-scale))) scaleX(0.96) scaleY(1.06);
+  }
+  64% {
+    transform: translateY(0) scaleX(1.1) scaleY(0.88);
+  }
+  76% {
+    transform: translateY(calc(-6px * var(--ui-scale))) scaleX(0.97) scaleY(1.04);
+  }
+  100% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+  }
 }
 
 .header .header-details {
@@ -549,6 +594,7 @@ body {
   var MIN_UI_SCALE = 0.5;
   var MAX_UI_SCALE = 1.5;
   var RESIZE_ZONE = 10;
+  var TITLE_TAP_WINDOW_MS = 650;
 
   function setUiScale(scale) {
     document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
@@ -633,7 +679,17 @@ body {
   var container = document.querySelector(".container");
   var headerActions = document.querySelector(".header-actions");
   var headerTooltip = document.querySelector(".header-tooltip");
+  var titleTrigger = document.querySelector(".title-trigger");
+  var titleHop = document.querySelector(".title-hop");
   var tooltipTarget = null;
+  var titleTapTimestamps = [];
+
+  function triggerTitleHop() {
+    if (!titleHop) return;
+    titleHop.classList.remove("is-hopping");
+    void titleHop.offsetWidth;
+    titleHop.classList.add("is-hopping");
+  }
 
   function hideHeaderTooltip() {
     tooltipTarget = null;
@@ -714,7 +770,7 @@ body {
       if (
         e.target
         && e.target.closest
-        && e.target.closest(".config-menu, .header-actions, button, input, label, summary")
+        && e.target.closest(".config-menu, .header-actions, .title-trigger, button, input, label, summary")
       ) return;
       dragState.active = true;
       dragState.lastX = e.screenX;
@@ -812,6 +868,32 @@ body {
   if (configMenu) {
     configMenu.addEventListener("toggle", function () {
       hideHeaderTooltip();
+    });
+  }
+
+  if (titleTrigger) {
+    titleTrigger.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+    });
+
+    titleTrigger.addEventListener("click", function () {
+      var now = Date.now();
+      titleTapTimestamps.push(now);
+      titleTapTimestamps = titleTapTimestamps.filter(function (ts) {
+        return now - ts <= TITLE_TAP_WINDOW_MS;
+      });
+
+      if (titleTapTimestamps.length >= 3) {
+        titleTapTimestamps = [];
+        triggerTitleHop();
+      }
+    });
+  }
+
+  if (titleHop) {
+    titleHop.addEventListener("animationend", function () {
+      titleHop.classList.remove("is-hopping");
     });
   }
 </script>
@@ -964,7 +1046,7 @@ body {
 
     return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
       .. renderedCss
-      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">"
+      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">"
       .. html.escape(primaryLine)
       .. "</span>\n        <span class=\"header-secondary\">"
       .. html.escape(secondaryLine)
