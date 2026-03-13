@@ -19,7 +19,7 @@ function Popover.new(app, cfg, deps)
   local POP_W = 500
   local POP_H = 272
   local POP_MIN_W = 320
-  local POP_MIN_H = 268
+  local POP_MIN_H = 260
   local POP_MAX_H = 408
   local POP_SCREEN_MARGIN = 32
 
@@ -54,9 +54,9 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: calc(8px * var(--ui-scale));
+  gap: calc(6px * var(--ui-scale));
   height: 100%;
-  padding: calc(14px * var(--ui-scale));
+  padding: calc(10px * var(--ui-scale));
   background: __POPOVER_BG__;
   -webkit-backdrop-filter: blur(10px) saturate(115%);
   backdrop-filter: blur(10px) saturate(115%);
@@ -71,7 +71,7 @@ body {
   flex-wrap: nowrap;
   align-items: flex-start;
   gap: calc(10px * var(--ui-scale));
-  padding-bottom: calc(10px * var(--ui-scale));
+  padding-bottom: calc(7px * var(--ui-scale));
   border-bottom: 1px solid #333;
   cursor: move;
 }
@@ -161,7 +161,8 @@ body {
   display: flex;
   align-items: center;
   gap: calc(6px * var(--ui-scale));
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
   overflow: hidden;
   font-size: calc(12px * var(--ui-scale));
@@ -225,6 +226,7 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.12s;
+  white-space: nowrap;
 }
 
 .btn:active {
