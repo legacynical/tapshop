@@ -293,6 +293,31 @@ body {
   color: #aaa;
 }
 
+.header-btn.icon-only,
+.config-trigger.icon-only {
+  width: calc(30px * var(--ui-scale));
+  height: calc(26px * var(--ui-scale));
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-btn.icon-only:focus-visible,
+.config-trigger.icon-only:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 calc(1px * var(--ui-scale)) rgba(120, 168, 255, 0.92);
+}
+
+.header-icon {
+  width: calc(14px * var(--ui-scale));
+  height: calc(14px * var(--ui-scale));
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  pointer-events: none;
+}
+
 .config-menu {
   position: relative;
 }
@@ -366,6 +391,30 @@ body {
 .config-trigger:hover {
   background: #5a5a5a;
   color: #f0f0f0;
+}
+
+.header-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: calc(3px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  border-radius: calc(5px * var(--ui-scale));
+  background: rgba(10, 10, 10, 0.94);
+  color: #f5f7fa;
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+
+.header-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 ]=]
@@ -581,6 +630,55 @@ body {
     document.body.style.cursor = cursor || "";
   }
 
+  var container = document.querySelector(".container");
+  var headerActions = document.querySelector(".header-actions");
+  var headerTooltip = document.querySelector(".header-tooltip");
+  var tooltipTarget = null;
+
+  function hideHeaderTooltip() {
+    tooltipTarget = null;
+    if (!headerTooltip) return;
+    headerTooltip.classList.remove("is-visible");
+    headerTooltip.textContent = "";
+  }
+
+  function showHeaderTooltip(el) {
+    if (!container || !headerActions || !headerTooltip || !el) return;
+    if (dragState.active || resizeState.active) return;
+    if (configMenu && configMenu.hasAttribute("open") && el.closest(".config-menu")) {
+      hideHeaderTooltip();
+      return;
+    }
+
+    var tooltipText = el.getAttribute("data-tooltip") || "";
+    if (!tooltipText) {
+      hideHeaderTooltip();
+      return;
+    }
+
+    tooltipTarget = el;
+    headerTooltip.textContent = tooltipText;
+    headerTooltip.classList.add("is-visible");
+
+    var containerRect = container.getBoundingClientRect();
+    var headerRect = header ? header.getBoundingClientRect() : null;
+    var buttonRect = el.getBoundingClientRect();
+    var style = window.getComputedStyle(container);
+    var paddingLeft = readPx(style.paddingLeft);
+    var paddingRight = readPx(style.paddingRight);
+    var tooltipRect = headerTooltip.getBoundingClientRect();
+    var minLeft = paddingLeft + 6;
+    var maxLeft = containerRect.width - tooltipRect.width - paddingRight - 6;
+    var centeredLeft = (buttonRect.left - containerRect.left) + (buttonRect.width / 2) - (tooltipRect.width / 2);
+    var left = Math.max(minLeft, Math.min(centeredLeft, maxLeft));
+    var topBase = headerRect
+      ? ((headerRect.bottom - containerRect.top) + 4)
+      : (readPx(style.paddingTop) + 28);
+
+    headerTooltip.style.left = left + "px";
+    headerTooltip.style.top = topBase + "px";
+  }
+
   var dragState = {
     active: false,
     lastX: 0,
@@ -603,6 +701,7 @@ body {
     resizeState.lastX = e.screenX;
     resizeState.lastY = e.screenY;
     setGlobalCursor(cursorForDirection(direction));
+    hideHeaderTooltip();
     sendAction("resizeStart", 0, 0, 0, 0, 0, direction);
     e.preventDefault();
     e.stopPropagation();
@@ -620,6 +719,7 @@ body {
       dragState.active = true;
       dragState.lastX = e.screenX;
       dragState.lastY = e.screenY;
+      hideHeaderTooltip();
       sendAction("dragStart");
       e.preventDefault();
     });
@@ -683,11 +783,37 @@ body {
   });
 
   var configMenu = document.querySelector(".config-menu");
+  var tooltipControls = document.querySelectorAll("[data-tooltip]");
   document.addEventListener("mousedown", function (e) {
+    hideHeaderTooltip();
     if (!configMenu || !configMenu.hasAttribute("open")) return;
     if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
     configMenu.removeAttribute("open");
   });
+
+  tooltipControls.forEach(function (el) {
+    el.addEventListener("mouseenter", function () {
+      showHeaderTooltip(el);
+    });
+    el.addEventListener("mouseleave", function () {
+      if (tooltipTarget === el) hideHeaderTooltip();
+    });
+    el.addEventListener("focusin", function () {
+      showHeaderTooltip(el);
+    });
+    el.addEventListener("focusout", function () {
+      if (tooltipTarget === el) hideHeaderTooltip();
+    });
+    el.addEventListener("mousedown", function () {
+      hideHeaderTooltip();
+    });
+  });
+
+  if (configMenu) {
+    configMenu.addEventListener("toggle", function () {
+      hideHeaderTooltip();
+    });
+  }
 </script>
 </body>
 </html>]=]
@@ -751,6 +877,61 @@ body {
     settingsStore.setSize(configModule.keys.popoverSize, savedSize)
   end
 
+  local ICON_SVGS = {
+    hide = [=[
+<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+<path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+<path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+<path d="m2 2 20 20" />
+]=],
+    config = [=[
+<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+<circle cx="12" cy="12" r="3" />
+]=],
+    clearAll = [=[
+<path d="M10 11v6" />
+<path d="M14 11v6" />
+<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+<path d="M3 6h18" />
+<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+]=],
+  }
+
+  local function iconSvg(name)
+    local icon = ICON_SVGS[name] or ""
+    return '<svg class="header-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+      .. icon
+      .. "</svg>"
+  end
+
+  local function headerIconButton(opts)
+    local tooltip = html.escape(opts.tooltip)
+    local ariaLabel = html.escape(opts.ariaLabel or opts.tooltip)
+    return '<button type="button" class="header-btn icon-only '
+      .. opts.className
+      .. '" aria-label="'
+      .. ariaLabel
+      .. '" data-tooltip="'
+      .. tooltip
+      .. '" onclick="'
+      .. opts.onclick
+      .. '">'
+      .. iconSvg(opts.icon)
+      .. "</button>"
+  end
+
+  local function configIconTrigger(opts)
+    local tooltip = html.escape(opts.tooltip)
+    local ariaLabel = html.escape(opts.ariaLabel or opts.tooltip)
+    return '<summary class="config-trigger icon-only" aria-label="'
+      .. ariaLabel
+      .. '" data-tooltip="'
+      .. tooltip
+      .. '">'
+      .. iconSvg(opts.icon)
+      .. "</summary>"
+  end
+
   local function getHeader()
     local info = windowService.getWindowInfo(activeWin)
       or windowService.getWindowInfo(callerWin)
@@ -787,7 +968,19 @@ body {
       .. html.escape(primaryLine)
       .. "</span>\n        <span class=\"header-secondary\">"
       .. html.escape(secondaryLine)
-      .. "</span>\n      </div>\n      <div class=\"header-actions\">\n        <button class=\"header-btn header-danger\" onclick=\"sendAction('unpairAll')\">Unpair ALL</button>\n        <details class=\"config-menu\">\n          <summary class=\"config-trigger\">Config</summary>\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
+      .. "</span>\n      </div>\n      <div class=\"header-actions\">\n        "
+      .. headerIconButton({
+        className = "header-danger",
+        icon = "clearAll",
+        tooltip = "Unpair ALL",
+        onclick = "sendAction('unpairAll')",
+      })
+      .. "\n        <details class=\"config-menu\">\n          "
+      .. configIconTrigger({
+        icon = "config",
+        tooltip = "Config",
+      })
+      .. "\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. checked
       .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
       .. alwaysOnTopChecked
@@ -795,7 +988,14 @@ body {
       .. tostring(opacityPercent)
       .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n            <label class=\"config-item\" style=\"margin-top: 8px;\">\n              <input type=\"checkbox\" "
       .. debugWindowChecked
-      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug\n            </label>\n          </div>\n        </details>\n        <button class=\"header-btn header-close\" onclick=\"sendAction('close')\">Close</button>\n      </div>\n    </div>\n    <div class=\"workspace-list\">\n"
+      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug\n            </label>\n          </div>\n        </details>\n        "
+      .. headerIconButton({
+        className = "header-close",
+        icon = "hide",
+        tooltip = "Hide",
+        onclick = "sendAction('close')",
+      })
+      .. "\n      </div>\n    </div>\n    <div class=\"header-tooltip\" aria-hidden=\"true\"></div>\n    <div class=\"workspace-list\">\n"
   end
 
   local function slotLabel(workspace, pairedWin)
