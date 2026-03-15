@@ -71,7 +71,6 @@ end)
 local popoverWindowTracker = hs.window.filter.new()
 popoverWindowTracker:subscribe({
   hs.window.filter.windowFocused,
-  hs.window.filter.windowTitleChanged,
 }, function(win)
   pcall(function()
     app:handleActiveWindowChange(win)

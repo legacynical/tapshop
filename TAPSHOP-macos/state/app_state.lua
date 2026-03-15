@@ -7,6 +7,16 @@ local PAIR_TOAST_COLOR = { red = 0x7e / 255, green = 0xc8 / 255, blue = 0x7e / 2
 local UNPAIR_TOAST_COLOR = { red = 0xc0 / 255, green = 0x40 / 255, blue = 0x30 / 255, alpha = 1 }
 local TOAST_WHITE = { white = 1, alpha = 1 }
 
+local function elapsedMs(startedAt)
+  return (hs.timer.absoluteTime() - startedAt) / 1e6
+end
+
+local function debugLog(cfg, fmt, ...)
+  if cfg and cfg.isGuiDebugMode then
+    hs.printf("[tapshop-perf] " .. fmt, ...)
+  end
+end
+
 local function clampOpacityPercent(value)
   if value < 40 then
     return 40
@@ -176,15 +186,20 @@ function AppState:pairSlot(index, sourceWindow)
 end
 
 function AppState:activateSlot(index)
+  local startedAt = hs.timer.absoluteTime()
   local workspace = self:_getWorkspace(index)
   if not workspace then
+    debugLog(self.cfg, "activateSlot slot=%d result=missing-workspace durationMs=%.2f", index, elapsedMs(startedAt))
     return
   end
+
+  local result = "noop"
 
   self:_runPairingAction(function()
     local win = hs.window.frontmostWindow()
     if not win then
       self.toast("No active window found!")
+      result = "no-frontmost-window"
       return
     end
 
@@ -192,6 +207,7 @@ function AppState:activateSlot(index)
     if not workspace:isPaired() then
       self:_pairWorkspace(workspace, currentId, win)
       self.toast(self:_formatPairToast(workspace, win), 2.0)
+      result = "paired-current-window"
       return
     end
 
@@ -199,11 +215,13 @@ function AppState:activateSlot(index)
       local paired = self.windowService.getWindowById(workspace.id)
       if paired then
         workspace:resetInputBuffer()
-        self.windowService.focusOrRestore(paired, self.cfg)
+        self.windowService.focusOrRestoreFast(paired, self.cfg)
         self:_refreshWorkspaceDisplayTitle(workspace, paired)
+        result = "focus-requested"
       else
         self:_clearWorkspace(workspace)
         self.toast("[Paired window missing; cleared]")
+        result = "cleared-missing-paired-window"
       end
       return
     end
@@ -213,8 +231,14 @@ function AppState:activateSlot(index)
     if paired and workspace:shouldMinimize() then
       workspace:resetInputBuffer()
       paired:minimize()
+      result = "minimized-paired-window"
+      return
     end
+
+    result = "repeat-press-buffered"
   end)
+
+  debugLog(self.cfg, "activateSlot slot=%d result=%s durationMs=%.2f", index, result, elapsedMs(startedAt))
 end
 
 function AppState:unpairSlot(index)
