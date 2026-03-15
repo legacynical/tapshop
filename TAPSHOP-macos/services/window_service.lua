@@ -1,4 +1,52 @@
 local WindowService = {}
+local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
+
+local function elapsedMs(startedAt)
+  return (hs.timer.absoluteTime() - startedAt) / 1e6
+end
+
+local function debugLog(cfg, fmt, ...)
+  if cfg and cfg.isGuiDebugMode then
+    hs.printf("[tapshop-perf] " .. fmt, ...)
+  end
+end
+
+local function isFrontmost(win)
+  if not win then
+    return false
+  end
+
+  local frontmost = hs.window.frontmostWindow()
+  return frontmost and frontmost:id() == win:id() or false
+end
+
+local function requestFocus(win)
+  local app = win:application()
+  if app and app:isHidden() then
+    app:unhide()
+  end
+  if app then
+    app:activate(true)
+  end
+  if win:isMinimized() then
+    win:unminimize()
+  end
+
+  win:focus()
+end
+
+local function scheduleFastFocusRetries(win)
+  for _, delay in ipairs(FAST_FOCUS_RETRY_DELAYS) do
+    hs.timer.doAfter(delay, function()
+      pcall(function()
+        if not win or isFrontmost(win) then
+          return
+        end
+        requestFocus(win)
+      end)
+    end)
+  end
+end
 
 function WindowService.getWindowInfo(win)
   win = win or hs.window.frontmostWindow()
@@ -54,8 +102,7 @@ function WindowService.waitForFrontmost(win, cfg)
   local timeoutSec = cfg.focusWaitTimeout
   local start = hs.timer.secondsSinceEpoch()
   while (hs.timer.secondsSinceEpoch() - start) < timeoutSec do
-    local frontmost = hs.window.frontmostWindow()
-    if frontmost and win and frontmost:id() == win:id() then
+    if isFrontmost(win) then
       return true
     end
     hs.timer.usleep(cfg.focusPollMicros)
@@ -64,29 +111,45 @@ function WindowService.waitForFrontmost(win, cfg)
 end
 
 function WindowService.focusOrRestore(win, cfg)
+  local startedAt = hs.timer.absoluteTime()
   if not win then
+    debugLog(cfg, "focus.verified result=missing-window durationMs=%.2f", elapsedMs(startedAt))
     return false
   end
 
-  local app = win:application()
-  local frontmost = hs.window.frontmostWindow()
-  if frontmost and frontmost:id() == win:id() then
+  if isFrontmost(win) then
+    debugLog(cfg, "focus.verified result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
     return true
   end
 
-  if app and app:isHidden() then
-    app:unhide()
-  end
-  if app then
-    app:activate(true)
-  end
-  if win:isMinimized() then
-    win:unminimize()
-    hs.timer.usleep(15000)
+  requestFocus(win)
+  local focused = WindowService.waitForFrontmost(win, cfg)
+  debugLog(
+    cfg,
+    "focus.verified result=%s windowId=%s durationMs=%.2f",
+    focused and "frontmost" or "timeout",
+    tostring(win:id()),
+    elapsedMs(startedAt)
+  )
+  return focused
+end
+
+function WindowService.focusOrRestoreFast(win, cfg)
+  local startedAt = hs.timer.absoluteTime()
+  if not win then
+    debugLog(cfg, "focus.fast result=missing-window durationMs=%.2f", elapsedMs(startedAt))
+    return false
   end
 
-  win:focus()
-  return WindowService.waitForFrontmost(win, cfg)
+  if isFrontmost(win) then
+    debugLog(cfg, "focus.fast result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
+    return true
+  end
+
+  requestFocus(win)
+  scheduleFastFocusRetries(win)
+  debugLog(cfg, "focus.fast result=focus-requested windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
+  return true
 end
 
 return WindowService
