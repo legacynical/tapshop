@@ -1,5 +1,9 @@
+local clientScript = require("ui.popover.client_script")
 local configModule = require("config")
-local html = require("ui.html")
+local debugStyles = require("ui.popover.debug_styles")
+local popoverRender = require("ui.popover.render")
+local popoverStyles = require("ui.popover.styles")
+local popoverTheme = require("ui.popover.theme")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
@@ -13,6 +17,7 @@ function Popover.new(app, cfg, deps)
   local activeWin = nil
   local isDragging = false
   local isResizing = false
+  local lastHeaderSnapshot = nil
   local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
   local savedSize = settingsStore.getSize(configModule.keys.popoverSize)
 
@@ -22,883 +27,6 @@ function Popover.new(app, cfg, deps)
   local POP_MIN_H = 260
   local POP_MAX_H = 408
   local POP_SCREEN_MARGIN = 32
-
-  local POPOVER_CSS = [=[
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --ui-scale: 1;
-}
-
-__DEBUG_CSS__
-
-html, body {
-  width: 100%;
-  height: 100%;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  background: transparent;
-  color: #e0e0e0;
-  font-size: calc(13px * var(--ui-scale));
-  -webkit-user-select: none;
-  overflow: hidden;
-}
-
-.container {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: calc(6px * var(--ui-scale));
-  height: 100%;
-  padding: calc(10px * var(--ui-scale));
-  background: __POPOVER_BG__;
-  -webkit-backdrop-filter: blur(10px) saturate(115%);
-  backdrop-filter: blur(10px) saturate(115%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  overflow: hidden;
-}
-
-.header {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: calc(10px * var(--ui-scale));
-  padding-bottom: calc(7px * var(--ui-scale));
-  border-bottom: 1px solid #333;
-  cursor: move;
-}
-
-.header .title-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(8px * var(--ui-scale));
-  flex: 0 0 auto;
-  align-self: stretch;
-}
-
-.header .title {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 700;
-  font-size: calc(14px * var(--ui-scale));
-  color: #fff;
-  letter-spacing: 0.5px;
-  line-height: 1.1;
-}
-
-.header .title-trigger,
-.header .title-hop {
-  display: inline-block;
-}
-
-.header .title-trigger {
-  cursor: pointer;
-  user-select: none;
-}
-
-.header .title-hop {
-  transform-origin: center bottom;
-}
-
-.header .title-hop.is-hopping {
-  animation: hop-cartoon 700ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes hop-cartoon {
-  0% {
-    transform: translateY(0) scaleX(1) scaleY(1);
-  }
-  12% {
-    transform: translateY(1px) scaleX(1.15) scaleY(0.84);
-  }
-  32% {
-    transform: translateY(calc(-13px * var(--ui-scale))) scaleX(0.88) scaleY(1.18);
-  }
-  46% {
-    transform: translateY(calc(-19px * var(--ui-scale))) scaleX(0.96) scaleY(1.06);
-  }
-  64% {
-    transform: translateY(0) scaleX(1.1) scaleY(0.88);
-  }
-  76% {
-    transform: translateY(calc(-6px * var(--ui-scale))) scaleX(0.97) scaleY(1.04);
-  }
-  100% {
-    transform: translateY(0) scaleX(1) scaleY(1);
-  }
-}
-
-.header .header-details {
-  display: flex;
-  flex-direction: column;
-  gap: calc(3px * var(--ui-scale));
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.header .header-primary {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.2;
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 600;
-  color: #fff;
-}
-
-.header .header-secondary {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.2;
-  font-size: calc(7px * var(--ui-scale));
-  color: #9aa0a6;
-}
-
-.header .header-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: calc(6px * var(--ui-scale));
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.workspace-list {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-rows: repeat(9, auto);
-  gap: calc(3px * var(--ui-scale));
-  align-content: start;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: calc(4px * var(--ui-scale));
-  min-height: 0;
-}
-
-.slot-num {
-  width: calc(18px * var(--ui-scale));
-  text-align: right;
-  color: #fff;
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 600;
-  margin-right: calc(8px * var(--ui-scale));
-  flex-shrink: 0;
-}
-
-.slot-label {
-  display: flex;
-  align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  flex: 1 1 0;
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
-  font-size: calc(12px * var(--ui-scale));
-}
-
-.slot-text-bg {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: calc(2px * var(--ui-scale)) calc(8px * var(--ui-scale));
-  background: rgba(0, 0, 0, 0.14);
-  -webkit-backdrop-filter: blur(1.5px);
-  backdrop-filter: blur(1.5px);
-  border-radius: 999px;
-  min-width: 0;
-}
-
-.paired {
-  color: #7ec87e;
-}
-
-.paired-minimized {
-  color: #e7c84f;
-}
-
-.unpaired {
-  color: #555;
-  font-style: italic;
-}
-
-.min-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: calc(1px * var(--ui-scale)) calc(5px * var(--ui-scale));
-  border-radius: 999px;
-  background: rgba(231, 200, 79, 0.16);
-  border: 1px solid rgba(231, 200, 79, 0.32);
-  color: #e7c84f;
-  font-size: calc(9px * var(--ui-scale));
-  font-weight: 700;
-  letter-spacing: 0.35px;
-  flex-shrink: 0;
-}
-
-.slot-buttons {
-  display: flex;
-  gap: calc(4px * var(--ui-scale));
-  flex-shrink: 0;
-  flex-wrap: nowrap;
-  margin-left: auto;
-}
-
-.btn {
-  border: none;
-  border-radius: calc(4px * var(--ui-scale));
-  padding: calc(4px * var(--ui-scale)) calc(11px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.12s;
-  white-space: nowrap;
-}
-
-.btn:active {
-  opacity: 0.6;
-}
-
-.btn-primary {
-  background: #2d6ee6;
-  color: #fff;
-  opacity: 0.9;
-}
-
-.btn-primary:hover {
-  background: #4080f0;
-  opacity: 1;
-}
-
-.btn-unpair {
-  background: #444;
-  color: #bbb;
-}
-
-.btn-unpair:hover {
-  background: #555;
-}
-
-.btn-unpair.off {
-  opacity: 0.25;
-  pointer-events: none;
-}
-
-.header-btn {
-  border: none;
-  border-radius: calc(4px * var(--ui-scale));
-  padding: calc(5px * var(--ui-scale)) calc(12px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.12s;
-}
-
-.header-btn:active {
-  opacity: 0.6;
-}
-
-.header-danger {
-  background: #a03020;
-  color: #fff;
-  opacity: 0.9;
-}
-
-.header-danger:hover {
-  background: #c04030;
-  opacity: 1;
-}
-
-.header-close {
-  background: #2a2a2a;
-  color: #777;
-}
-
-.header-close:hover {
-  background: #3a3a3a;
-  color: #aaa;
-}
-
-.header-btn.icon-only,
-.config-trigger.icon-only {
-  width: calc(30px * var(--ui-scale));
-  height: calc(26px * var(--ui-scale));
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.header-btn.icon-only:focus-visible,
-.config-trigger.icon-only:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 calc(1px * var(--ui-scale)) rgba(120, 168, 255, 0.92);
-}
-
-.header-icon {
-  width: calc(14px * var(--ui-scale));
-  height: calc(14px * var(--ui-scale));
-  display: block;
-  stroke: currentColor;
-  fill: none;
-  pointer-events: none;
-}
-
-.config-menu {
-  position: relative;
-}
-
-.config-menu summary {
-  list-style: none;
-}
-
-.config-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.config-panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: calc(6px * var(--ui-scale));
-  min-width: 245px;
-  max-width: min(280px, calc(100vw - 24px));
-  border: 1px solid #3c3c3c;
-  border-radius: calc(6px * var(--ui-scale));
-  background: #171717;
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
-  padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  z-index: 5;
-}
-
-.config-item {
-  display: flex;
-  align-items: center;
-  gap: calc(7px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  color: #c6c6c6;
-  cursor: pointer;
-}
-
-.config-item input {
-  accent-color: #2d6ee6;
-}
-
-.config-slider-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: calc(4px * var(--ui-scale));
-  margin-top: calc(8px * var(--ui-scale));
-}
-
-.config-slider-row {
-  display: flex;
-  align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  color: #c6c6c6;
-}
-
-.config-slider {
-  width: 100%;
-}
-
-.config-trigger {
-  border: none;
-  border-radius: calc(4px * var(--ui-scale));
-  padding: calc(5px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 600;
-  background: #4b4b4b;
-  color: #d2d2d2;
-  cursor: pointer;
-}
-
-.config-trigger:hover {
-  background: #5a5a5a;
-  color: #f0f0f0;
-}
-
-.header-tooltip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  padding: calc(3px * var(--ui-scale)) calc(6px * var(--ui-scale));
-  border-radius: calc(5px * var(--ui-scale));
-  background: rgba(10, 10, 10, 0.94);
-  color: #f5f7fa;
-  font-size: calc(10px * var(--ui-scale));
-  line-height: 1;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 0.12s ease;
-  z-index: 6;
-}
-
-.header-tooltip.is-visible {
-  opacity: 1;
-  visibility: visible;
-}
-
-]=]
-
-  local POPOVER_DEBUG_CSS = [=[
-.container {
-  outline: 1px solid rgba(255, 255, 255, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.workspace-list {
-  outline: 1px solid rgba(255, 0, 255, 0.9);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.row {
-  outline: 1px solid rgba(255, 140, 0, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.slot-num {
-  outline: 1px solid rgba(255, 80, 80, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.slot-label {
-  outline: 1px solid rgba(0, 220, 255, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.slot-text-bg {
-  outline: 1px solid rgba(0, 255, 120, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.min-badge {
-  outline: 1px solid rgba(255, 230, 0, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.slot-buttons {
-  outline: 1px solid rgba(180, 120, 255, 0.95);
-  outline-offset: -1px;
-  position: relative;
-}
-
-.container::before,
-.workspace-list::before,
-.row::before,
-.slot-num::before,
-.slot-label::before,
-.slot-text-bg::before,
-.min-badge::before,
-.slot-buttons::before {
-  position: absolute;
-  top: 0;
-  left: 0;
-  padding: 0 calc(3px * var(--ui-scale));
-  font-size: calc(7px * var(--ui-scale));
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.2px;
-  color: #111;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.container::before {
-  content: "container";
-  background: rgba(255, 255, 255, 0.95);
-}
-
-.workspace-list::before {
-  content: "workspace-list grid";
-  background: rgba(255, 0, 255, 0.9);
-}
-
-.row::before {
-  content: "row flex";
-  background: rgba(255, 140, 0, 0.95);
-}
-
-.slot-num::before {
-  content: "slot-num";
-  background: rgba(255, 80, 80, 0.95);
-}
-
-.slot-label::before {
-  content: "slot-label flex";
-  background: rgba(0, 220, 255, 0.95);
-}
-
-.slot-text-bg::before {
-  content: "slot-text-bg pill";
-  background: rgba(0, 255, 120, 0.95);
-}
-
-.min-badge::before {
-  content: "min-badge";
-  background: rgba(255, 230, 0, 0.95);
-}
-
-.slot-buttons::before {
-  content: "slot-buttons";
-  background: rgba(180, 120, 255, 0.95);
-}
-]=]
-
-  local POPOVER_SUFFIX = [=[
-  </div>
-</div>
-<script>
-  function sendAction(action, slot, dx, dy, dw, dh, direction) {
-    window.webkit.messageHandlers.tapshop.postMessage({
-      action: action,
-      slot: slot || 0,
-      dx: dx || 0,
-      dy: dy || 0,
-      dw: dw || 0,
-      dh: dh || 0,
-      direction: direction || "",
-    });
-  }
-
-  var MIN_UI_SCALE = 0.5;
-  var MAX_UI_SCALE = 1.5;
-  var RESIZE_ZONE = 10;
-  var TITLE_TAP_WINDOW_MS = 650;
-
-  function setUiScale(scale) {
-    document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
-  }
-
-  function readPx(value) {
-    return parseFloat(value || "0") || 0;
-  }
-
-  function measureContentHeightAtScale(scale) {
-    var container = document.querySelector(".container");
-    var header = document.querySelector(".header");
-    var workspaceList = document.querySelector(".workspace-list");
-    if (!container || !header || !workspaceList) return 0;
-
-    setUiScale(scale);
-    void container.offsetHeight;
-
-    var containerStyle = window.getComputedStyle(container);
-    var gap = readPx(containerStyle.rowGap || containerStyle.gap);
-
-    return header.getBoundingClientRect().height
-      + workspaceList.getBoundingClientRect().height
-      + gap
-      + readPx(containerStyle.paddingTop)
-      + readPx(containerStyle.paddingBottom)
-      + readPx(containerStyle.borderTopWidth)
-      + readPx(containerStyle.borderBottomWidth);
-  }
-
-  function updateUiScale() {
-    var baseHeight = measureContentHeightAtScale(1);
-    var maxHeight = measureContentHeightAtScale(MAX_UI_SCALE);
-    if (!baseHeight || !maxHeight || maxHeight <= baseHeight) {
-      setUiScale(1);
-      return;
-    }
-
-    var scalableHeight = (maxHeight - baseHeight) / (MAX_UI_SCALE - 1);
-    if (scalableHeight <= 0) {
-      setUiScale(1);
-      return;
-    }
-
-    var fixedHeight = baseHeight - scalableHeight;
-    var scale = (window.innerHeight - fixedHeight) / scalableHeight;
-    scale = Math.min(MAX_UI_SCALE, scale);
-    scale = Math.max(MIN_UI_SCALE, scale);
-    setUiScale(scale);
-  }
-
-  function getResizeDirection(e) {
-    var nearLeft = e.clientX <= RESIZE_ZONE;
-    var nearRight = e.clientX >= window.innerWidth - RESIZE_ZONE;
-    var nearTop = e.clientY <= RESIZE_ZONE;
-    var nearBottom = e.clientY >= window.innerHeight - RESIZE_ZONE;
-
-    if (nearTop && nearLeft) return "nw";
-    if (nearTop && nearRight) return "ne";
-    if (nearBottom && nearLeft) return "sw";
-    if (nearBottom && nearRight) return "se";
-    if (nearLeft) return "w";
-    if (nearRight) return "e";
-    if (nearTop) return "n";
-    if (nearBottom) return "s";
-    return "";
-  }
-
-  function cursorForDirection(direction) {
-    if (direction === "n" || direction === "s") return "ns-resize";
-    if (direction === "e" || direction === "w") return "ew-resize";
-    if (direction === "ne" || direction === "sw") return "nesw-resize";
-    if (direction === "nw" || direction === "se") return "nwse-resize";
-    return "";
-  }
-
-  function setGlobalCursor(cursor) {
-    document.documentElement.style.cursor = cursor || "";
-    document.body.style.cursor = cursor || "";
-  }
-
-  var container = document.querySelector(".container");
-  var headerActions = document.querySelector(".header-actions");
-  var headerTooltip = document.querySelector(".header-tooltip");
-  var titleTrigger = document.querySelector(".title-trigger");
-  var titleHop = document.querySelector(".title-hop");
-  var tooltipTarget = null;
-  var titleTapTimestamps = [];
-
-  function triggerTitleHop() {
-    if (!titleHop) return;
-    titleHop.classList.remove("is-hopping");
-    void titleHop.offsetWidth;
-    titleHop.classList.add("is-hopping");
-  }
-
-  function hideHeaderTooltip() {
-    tooltipTarget = null;
-    if (!headerTooltip) return;
-    headerTooltip.classList.remove("is-visible");
-    headerTooltip.textContent = "";
-  }
-
-  function showHeaderTooltip(el) {
-    if (!container || !headerActions || !headerTooltip || !el) return;
-    if (dragState.active || resizeState.active) return;
-    if (configMenu && configMenu.hasAttribute("open") && el.closest(".config-menu")) {
-      hideHeaderTooltip();
-      return;
-    }
-
-    var tooltipText = el.getAttribute("data-tooltip") || "";
-    if (!tooltipText) {
-      hideHeaderTooltip();
-      return;
-    }
-
-    tooltipTarget = el;
-    headerTooltip.textContent = tooltipText;
-    headerTooltip.classList.add("is-visible");
-
-    var containerRect = container.getBoundingClientRect();
-    var headerRect = header ? header.getBoundingClientRect() : null;
-    var buttonRect = el.getBoundingClientRect();
-    var style = window.getComputedStyle(container);
-    var paddingLeft = readPx(style.paddingLeft);
-    var paddingRight = readPx(style.paddingRight);
-    var tooltipRect = headerTooltip.getBoundingClientRect();
-    var minLeft = paddingLeft + 6;
-    var maxLeft = containerRect.width - tooltipRect.width - paddingRight - 6;
-    var centeredLeft = (buttonRect.left - containerRect.left) + (buttonRect.width / 2) - (tooltipRect.width / 2);
-    var left = Math.max(minLeft, Math.min(centeredLeft, maxLeft));
-    var topBase = headerRect
-      ? ((headerRect.bottom - containerRect.top) + 4)
-      : (readPx(style.paddingTop) + 28);
-
-    headerTooltip.style.left = left + "px";
-    headerTooltip.style.top = topBase + "px";
-  }
-
-  var dragState = {
-    active: false,
-    lastX: 0,
-    lastY: 0,
-  };
-
-  var resizeState = {
-    active: false,
-    lastX: 0,
-    lastY: 0,
-    direction: "",
-  };
-
-  document.addEventListener("mousedown", function (e) {
-    if (e.button !== 0) return;
-    var direction = getResizeDirection(e);
-    if (!direction) return;
-    resizeState.active = true;
-    resizeState.direction = direction;
-    resizeState.lastX = e.screenX;
-    resizeState.lastY = e.screenY;
-    setGlobalCursor(cursorForDirection(direction));
-    hideHeaderTooltip();
-    sendAction("resizeStart", 0, 0, 0, 0, 0, direction);
-    e.preventDefault();
-    e.stopPropagation();
-  }, true);
-
-  var header = document.querySelector(".header");
-  if (header) {
-    header.addEventListener("mousedown", function (e) {
-      if (e.button !== 0) return;
-      if (
-        e.target
-        && e.target.closest
-        && e.target.closest(".config-menu, .header-actions, .title-trigger, button, input, label, summary")
-      ) return;
-      dragState.active = true;
-      dragState.lastX = e.screenX;
-      dragState.lastY = e.screenY;
-      hideHeaderTooltip();
-      sendAction("dragStart");
-      e.preventDefault();
-    });
-  }
-
-  window.addEventListener("mousemove", function (e) {
-    if (!dragState.active) return;
-
-    var dx = e.screenX - dragState.lastX;
-    var dy = e.screenY - dragState.lastY;
-    dragState.lastX = e.screenX;
-    dragState.lastY = e.screenY;
-
-    if (dx !== 0 || dy !== 0) {
-      sendAction("dragMove", 0, dx, dy);
-    }
-  });
-
-  window.addEventListener("mouseup", function () {
-    if (!dragState.active) return;
-    dragState.active = false;
-    sendAction("dragEnd");
-  });
-
-  window.addEventListener("mousemove", function (e) {
-    if (!resizeState.active) return;
-
-    var dw = e.screenX - resizeState.lastX;
-    var dh = e.screenY - resizeState.lastY;
-    resizeState.lastX = e.screenX;
-    resizeState.lastY = e.screenY;
-
-    if (dw !== 0 || dh !== 0) {
-      sendAction("resizeMove", 0, 0, 0, dw, dh, resizeState.direction);
-    }
-  });
-
-  window.addEventListener("mouseup", function () {
-    if (!resizeState.active) return;
-    resizeState.active = false;
-    resizeState.direction = "";
-    setGlobalCursor("");
-    sendAction("resizeEnd");
-  });
-
-  document.addEventListener("mousemove", function (e) {
-    if (dragState.active || resizeState.active) return;
-    setGlobalCursor(cursorForDirection(getResizeDirection(e)));
-  });
-
-  document.addEventListener("mouseleave", function () {
-    if (dragState.active || resizeState.active) return;
-    setGlobalCursor("");
-  });
-
-  window.addEventListener("resize", updateUiScale);
-  updateUiScale();
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") sendAction("close");
-  });
-
-  var configMenu = document.querySelector(".config-menu");
-  var tooltipControls = document.querySelectorAll("[data-tooltip]");
-  document.addEventListener("mousedown", function (e) {
-    hideHeaderTooltip();
-    if (!configMenu || !configMenu.hasAttribute("open")) return;
-    if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
-    configMenu.removeAttribute("open");
-  });
-
-  tooltipControls.forEach(function (el) {
-    el.addEventListener("mouseenter", function () {
-      showHeaderTooltip(el);
-    });
-    el.addEventListener("mouseleave", function () {
-      if (tooltipTarget === el) hideHeaderTooltip();
-    });
-    el.addEventListener("focusin", function () {
-      showHeaderTooltip(el);
-    });
-    el.addEventListener("focusout", function () {
-      if (tooltipTarget === el) hideHeaderTooltip();
-    });
-    el.addEventListener("mousedown", function () {
-      hideHeaderTooltip();
-    });
-  });
-
-  if (configMenu) {
-    configMenu.addEventListener("toggle", function () {
-      hideHeaderTooltip();
-    });
-  }
-
-  if (titleTrigger) {
-    titleTrigger.addEventListener("mousedown", function (e) {
-      if (e.button !== 0) return;
-      e.stopPropagation();
-    });
-
-    titleTrigger.addEventListener("click", function () {
-      var now = Date.now();
-      titleTapTimestamps.push(now);
-      titleTapTimestamps = titleTapTimestamps.filter(function (ts) {
-        return now - ts <= TITLE_TAP_WINDOW_MS;
-      });
-
-      if (titleTapTimestamps.length >= 3) {
-        titleTapTimestamps = [];
-        triggerTitleHop();
-      }
-    });
-  }
-
-  if (titleHop) {
-    titleHop.addEventListener("animationend", function () {
-      titleHop.classList.remove("is-hopping");
-    });
-  }
-</script>
-</body>
-</html>]=]
 
   local function pickScreen()
     return hs.mouse.getCurrentScreen()
@@ -959,67 +87,13 @@ body {
     settingsStore.setSize(configModule.keys.popoverSize, savedSize)
   end
 
-  local ICON_SVGS = {
-    hide = [=[
-<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
-<path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
-<path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
-<path d="m2 2 20 20" />
-]=],
-    config = [=[
-<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
-<circle cx="12" cy="12" r="3" />
-]=],
-    clearAll = [=[
-<path d="M10 11v6" />
-<path d="M14 11v6" />
-<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-<path d="M3 6h18" />
-<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-]=],
-  }
-
-  local function iconSvg(name)
-    local icon = ICON_SVGS[name] or ""
-    return '<svg class="header-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
-      .. icon
-      .. "</svg>"
-  end
-
-  local function headerIconButton(opts)
-    local tooltip = html.escape(opts.tooltip)
-    local ariaLabel = html.escape(opts.ariaLabel or opts.tooltip)
-    return '<button type="button" class="header-btn icon-only '
-      .. opts.className
-      .. '" aria-label="'
-      .. ariaLabel
-      .. '" data-tooltip="'
-      .. tooltip
-      .. '" onclick="'
-      .. opts.onclick
-      .. '">'
-      .. iconSvg(opts.icon)
-      .. "</button>"
-  end
-
-  local function configIconTrigger(opts)
-    local tooltip = html.escape(opts.tooltip)
-    local ariaLabel = html.escape(opts.ariaLabel or opts.tooltip)
-    return '<summary class="config-trigger icon-only" aria-label="'
-      .. ariaLabel
-      .. '" data-tooltip="'
-      .. tooltip
-      .. '">'
-      .. iconSvg(opts.icon)
-      .. "</summary>"
-  end
-
-  local function getHeader()
+  local function currentHeaderLines()
     local info = windowService.getWindowInfo(activeWin)
       or windowService.getWindowInfo(callerWin)
       or windowService.getWindowInfo()
     local primaryLine = "No active window found"
     local secondaryLine = ""
+
     if info then
       local rawTitle = info.title or ""
       local title = rawTitle:match("%S") and rawTitle or "[untitled]"
@@ -1034,50 +108,20 @@ body {
       end
     end
 
-    local checked = cfg.popoverAutoHideAfterAction and "checked" or ""
-    local alwaysOnTopChecked = cfg.popoverAlwaysOnTop and "checked" or ""
-    local debugWindowChecked = cfg.popoverDebugWindow and "checked" or ""
-    local opacityPercent = math.floor((cfg.popoverBackgroundOpacity or 0.85) * 100 + 0.5)
-    local popoverBgCss = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100)
-    local debugCss = cfg.popoverDebugWindow and POPOVER_DEBUG_CSS or ""
-    local renderedCss = POPOVER_CSS
-      :gsub("__POPOVER_BG__", popoverBgCss)
-      :gsub("__DEBUG_CSS__", debugCss)
+    return primaryLine, secondaryLine
+  end
 
-    return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n"
-      .. renderedCss
-      .. "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">"
-      .. html.escape(primaryLine)
-      .. "</span>\n        <span class=\"header-secondary\">"
-      .. html.escape(secondaryLine)
-      .. "</span>\n      </div>\n      <div class=\"header-actions\">\n        "
-      .. headerIconButton({
-        className = "header-danger",
-        icon = "clearAll",
-        tooltip = "Unpair ALL",
-        onclick = "sendAction('unpairAll')",
-      })
-      .. "\n        <details class=\"config-menu\">\n          "
-      .. configIconTrigger({
-        icon = "config",
-        tooltip = "Config",
-      })
-      .. "\n          <div class=\"config-panel\">\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
-      .. checked
-      .. " onchange=\"sendAction('setAutoHideAfterAction', this.checked ? 1 : 0)\">\n              Auto-hide after pair/unpair\n            </label>\n            <label class=\"config-item\">\n              <input type=\"checkbox\" "
-      .. alwaysOnTopChecked
-      .. " onchange=\"sendAction('setAlwaysOnTop', this.checked ? 1 : 0)\">\n              Always on top\n            </label>\n            <div class=\"config-slider-wrap\">\n              <div class=\"config-slider-row\">\n                <span>Background opacity</span>\n              </div>\n              <input class=\"config-slider\" type=\"range\" min=\"40\" max=\"100\" step=\"10\" value=\""
-      .. tostring(opacityPercent)
-      .. "\" onchange=\"sendAction('setPopoverOpacity', this.value)\">\n            </div>\n            <label class=\"config-item\" style=\"margin-top: 8px;\">\n              <input type=\"checkbox\" "
-      .. debugWindowChecked
-      .. " onchange=\"sendAction('setDebugWindow', this.checked ? 1 : 0)\">\n              Debug\n            </label>\n          </div>\n        </details>\n        "
-      .. headerIconButton({
-        className = "header-close",
-        icon = "hide",
-        tooltip = "Hide",
-        onclick = "sendAction('close')",
-      })
-      .. "\n      </div>\n    </div>\n    <div class=\"header-tooltip\" aria-hidden=\"true\"></div>\n    <div class=\"workspace-list\">\n"
+  local function headerSnapshot(primaryLine, secondaryLine)
+    return {
+      primaryLine = primaryLine,
+      secondaryLine = secondaryLine,
+    }
+  end
+
+  local function headerSnapshotChanged(nextSnapshot)
+    return not lastHeaderSnapshot
+      or lastHeaderSnapshot.primaryLine ~= nextSnapshot.primaryLine
+      or lastHeaderSnapshot.secondaryLine ~= nextSnapshot.secondaryLine
   end
 
   local function slotLabel(workspace, pairedWin)
@@ -1100,41 +144,61 @@ body {
     return workspace.displayTitle or "[empty]"
   end
 
-  local function rowHtml(index, workspace)
-    local isPaired = workspace:isPaired()
-    local pairedWin = nil
-    local isMinimized = false
-    local className = "unpaired"
-    if isPaired then
-      pairedWin = windowService.getWindowById(workspace.id)
-      isMinimized = pairedWin and pairedWin:isMinimized() or false
-      if isMinimized then
-        className = "paired-minimized"
-      else
-        className = "paired"
-      end
-    end
-    local offClass = isPaired and "" or " off"
-    local title = html.escape(slotLabel(workspace, pairedWin))
-    local minBadge = isMinimized and "<span class=\"min-badge\">MIN</span>" or ""
+  local function buildRowsViewModel()
+    local rows = {}
 
-    return "    <div class=\"row\">\n"
-      .. "      <span class=\"slot-num\">" .. index .. "</span>\n"
-      .. "      <span class=\"slot-label " .. className .. "\"><span class=\"slot-text-bg\">" .. title .. "</span>" .. minBadge .. "</span>\n"
-      .. "      <div class=\"slot-buttons\">\n"
-      .. "        <button class=\"btn btn-primary\" onclick=\"sendAction('pair'," .. index .. ")\">Pair</button>\n"
-      .. "        <button class=\"btn btn-unpair" .. offClass .. "\" onclick=\"sendAction('unpair'," .. index .. ")\">Unpair</button>\n"
-      .. "      </div>\n"
-      .. "    </div>\n"
+    for index, workspace in ipairs(app:getWorkspaces()) do
+      local isPaired = workspace:isPaired()
+      local pairedWin = nil
+      local isMinimized = false
+      local className = "unpaired"
+
+      if isPaired then
+        pairedWin = windowService.getWindowById(workspace.id)
+        isMinimized = pairedWin and pairedWin:isMinimized() or false
+        if isMinimized then
+          className = "paired-minimized"
+        else
+          className = "paired"
+        end
+      end
+
+      rows[#rows + 1] = {
+        index = index,
+        label = slotLabel(workspace, pairedWin),
+        className = className,
+        isMinimized = isMinimized,
+        canUnpair = isPaired,
+      }
+    end
+
+    return rows
   end
 
-  local function buildHtml()
-    local parts = { getHeader() }
-    for index, workspace in ipairs(app:getWorkspaces()) do
-      parts[#parts + 1] = rowHtml(index, workspace)
+  local function buildRenderContext()
+    local theme = popoverTheme.buildTheme(cfg)
+    local primaryLine, secondaryLine = currentHeaderLines()
+    lastHeaderSnapshot = headerSnapshot(primaryLine, secondaryLine)
+    local css = popoverStyles.buildCss(theme)
+
+    if cfg.popoverDebugWindow then
+      css = css .. "\n" .. debugStyles.css
     end
-    parts[#parts + 1] = POPOVER_SUFFIX
-    return table.concat(parts)
+
+    return {
+      css = css,
+      script = clientScript.script,
+      theme = theme,
+      primaryLine = primaryLine,
+      secondaryLine = secondaryLine,
+      config = {
+        autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
+        alwaysOnTop = cfg.popoverAlwaysOnTop == true,
+        debugWindow = cfg.popoverDebugWindow == true,
+        opacityPercent = theme.opacityPercent,
+      },
+      rows = buildRowsViewModel(),
+    }
   end
 
   local panel = webviewPanel.new({
@@ -1147,7 +211,9 @@ body {
     transparent = true,
     level = currentPopoverLevel,
     allowTextEntry = true,
-    buildHtml = buildHtml,
+    buildHtml = function()
+      return popoverRender.buildHtml(buildRenderContext())
+    end,
     handleAction = function(panelRef, msg)
       local body = msg.body or {}
       local action = body.action
@@ -1305,7 +371,16 @@ body {
     else
       activeWin = hs.window.frontmostWindow() or activeWin
     end
-    self:refreshIfShown()
+
+    if not panel:isShown() then
+      panel:markDirty()
+      return
+    end
+
+    local primaryLine, secondaryLine = currentHeaderLines()
+    if headerSnapshotChanged(headerSnapshot(primaryLine, secondaryLine)) then
+      panel:refresh()
+    end
   end
 
   function instance:getDebugState()
