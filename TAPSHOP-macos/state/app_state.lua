@@ -140,8 +140,24 @@ end
 function AppState:_workspacePairingSnapshot()
   local pairings = {}
   for index, workspace in ipairs(self.workspaces) do
-    if workspace and workspace.id then
-      pairings[index] = workspace.id
+    if workspace then
+      local hasMetadata = workspace.bundleID
+        or workspace.appName
+        or workspace.titleRaw
+        or workspace.titleNormalized
+        or workspace.displayTitle ~= "[empty]"
+        or workspace.closedAt
+      if workspace.id or hasMetadata then
+        pairings[index] = {
+          windowId = workspace.id,
+          bundleID = workspace.bundleID,
+          appName = workspace.appName,
+          titleRaw = workspace.titleRaw,
+          titleNormalized = workspace.titleNormalized,
+          displayTitle = workspace.displayTitle,
+          closedAt = workspace.closedAt,
+        }
+      end
     end
   end
   return pairings
@@ -156,12 +172,29 @@ end
 
 function AppState:_restoreWorkspacePairings()
   local pairings = self.settingsStore.getWindowPairings(configModule.keys.workspacePairings)
-  for index, windowId in pairs(pairings) do
+  for index, persisted in pairs(pairings) do
     local workspace = self:_getWorkspace(index)
     if workspace then
-      local win = self.windowService.getWindowById(windowId)
-      if win then
-        workspace:pair(windowId, self.windowService.displayTitle(win))
+      if type(persisted) == "number" then
+        local win = self.windowService.getWindowById(persisted)
+        if win then
+          self:_pairWorkspace(workspace, persisted, win)
+        end
+      elseif type(persisted) == "table" then
+        local windowId = persisted.windowId
+        local win = self.windowService.getWindowById(windowId)
+        if win then
+          self:_pairWorkspace(workspace, windowId, win)
+        else
+          workspace:pairWithMetadata(nil, "[empty]", {
+            bundleID = persisted.bundleID,
+            appName = persisted.appName,
+            titleRaw = persisted.titleRaw,
+            titleNormalized = persisted.titleNormalized,
+          })
+          workspace:setDisplayTitle("[empty]")
+          workspace:clearRecoveryTracking()
+        end
       end
     end
   end
@@ -211,7 +244,73 @@ function AppState:_refreshPairedWorkspaceTitlesForWindow(win)
 end
 
 function AppState:_pairWorkspace(workspace, windowId, win)
-  workspace:pair(windowId, self.windowService.displayTitle(win))
+  workspace:pairWithMetadata(windowId, self.windowService.displayTitle(win), self.windowService.pairingMetadata(win))
+end
+
+function AppState:_slotIndexForWorkspace(workspace)
+  for index, candidate in ipairs(self.workspaces) do
+    if candidate == workspace then
+      return index
+    end
+  end
+  return nil
+end
+
+function AppState:_isWindowAlreadyPaired(windowId)
+  for _, workspace in ipairs(self.workspaces) do
+    if workspace.id == windowId then
+      return true
+    end
+  end
+  return false
+end
+
+function AppState:_expireRecoveryTracking(now)
+  local changed = false
+  for _, workspace in ipairs(self.workspaces) do
+    if workspace.closedAt and not workspace:canRecover(now, self.cfg.relaunchRecoveryTimeout) then
+      workspace:clearRecoveryTracking()
+      changed = true
+    end
+  end
+  if changed then
+    self:_persistWorkspacePairings()
+  end
+  return changed
+end
+
+function AppState:_restoreWorkspaceFromCandidate(win, now)
+  if not self.windowService.isCandidateWindow or not self.windowService.isCandidateWindow(win) then
+    return false
+  end
+
+  local candidateMeta = self.windowService.pairingMetadata(win)
+  local candidateId = win:id()
+  if not candidateMeta or not candidateId or self:_isWindowAlreadyPaired(candidateId) then
+    return false
+  end
+
+  for _, workspace in ipairs(self.workspaces) do
+    if workspace:canRecover(now, self.cfg.relaunchRecoveryTimeout)
+      and workspace:matchesRecoveryCandidate(candidateMeta) then
+      self:_pairWorkspace(workspace, candidateId, win)
+      self:_persistWorkspacePairings()
+      self.toast({
+        segments = {
+          { text = string.format("Restored %s: ", workspace.label), color = TOAST_WHITE },
+          { text = candidateMeta.displayTitle or "[empty]", color = PAIR_TOAST_COLOR },
+        },
+      }, 2.0)
+      self:_recordDebugAction({
+        lastAction = "window_restored",
+        lastSlot = self:_slotIndexForWorkspace(workspace),
+        lastPairingMutation = "restore",
+      })
+      return true
+    end
+  end
+
+  return false
 end
 
 function AppState:_formatPairToast(workspace, win)
@@ -220,7 +319,6 @@ function AppState:_formatPairToast(workspace, win)
     return string.format("[Pairing %s]", workspace.label)
   end
   return {
-    prefix = false,
     segments = {
       { text = string.format("Pairing %s: ", workspace.label), color = TOAST_WHITE },
       { text = label, color = PAIR_TOAST_COLOR },
@@ -448,19 +546,15 @@ function AppState:handleWindowEvent(event, win)
     for _, workspace in ipairs(self.workspaces) do
       if workspace.id == deadId then
         if not firstChangedSlot then
-          for index, candidate in ipairs(self.workspaces) do
-            if candidate == workspace then
-              firstChangedSlot = index
-              break
-            end
-          end
+          firstChangedSlot = self:_slotIndexForWorkspace(workspace)
         end
-        self:_clearWorkspaceAndPersist(workspace)
+        workspace:markClosedForRecovery(hs.timer.secondsSinceEpoch())
         changed = true
       end
     end
 
     if changed then
+      self:_persistWorkspacePairings()
       self:_recordDebugAction({
         lastAction = "window_destroyed",
         lastSlot = firstChangedSlot,
@@ -472,10 +566,17 @@ function AppState:handleWindowEvent(event, win)
     return
   end
 
+  local now = hs.timer.secondsSinceEpoch()
+  local recoveryStateChanged = self:_expireRecoveryTracking(now)
+  local restored = false
+  if win then
+    restored = self:_restoreWorkspaceFromCandidate(win, now)
+  end
+
   local pairedWorkspaceTouched = self:_refreshPairedWorkspaceTitlesForWindow(win)
   self.youtubeService:handleWindowCandidate(win)
 
-  local shouldRefreshPopover = event == hs.window.filter.windowFocused or pairedWorkspaceTouched
+  local shouldRefreshPopover = event == hs.window.filter.windowFocused or pairedWorkspaceTouched or recoveryStateChanged or restored
   if win then
     local frontmost = hs.window.frontmostWindow()
     if frontmost and frontmost:id() == win:id() then

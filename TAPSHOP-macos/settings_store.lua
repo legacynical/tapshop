@@ -21,6 +21,20 @@ local function normalizePositiveInteger(value)
   return normalized
 end
 
+local function normalizeOptionalString(value)
+  if type(value) ~= "string" then
+    return nil
+  end
+  return value
+end
+
+local function normalizeOptionalNumber(value)
+  if type(value) ~= "number" then
+    return nil
+  end
+  return value
+end
+
 function SettingsStore.getBoolean(key, defaultValue)
   local value = hs.settings.get(key)
   if type(value) == "boolean" then
@@ -108,11 +122,35 @@ function SettingsStore.getWindowPairings(key)
     return out
   end
 
-  for rawSlot, rawWindowId in pairs(value) do
+  for rawSlot, rawPairing in pairs(value) do
     local slot = normalizePositiveInteger(tonumber(rawSlot))
-    local windowId = normalizePositiveInteger(rawWindowId)
-    if slot and slot >= 1 and slot <= 9 and windowId then
-      out[slot] = windowId
+    if slot and slot >= 1 and slot <= 9 then
+      if type(rawPairing) == "number" then
+        local windowId = normalizePositiveInteger(rawPairing)
+        if windowId then
+          out[slot] = windowId
+        end
+      elseif type(rawPairing) == "table" then
+        local windowId = normalizePositiveInteger(rawPairing.windowId)
+        local bundleID = normalizeOptionalString(rawPairing.bundleID)
+        local appName = normalizeOptionalString(rawPairing.appName)
+        local titleRaw = normalizeOptionalString(rawPairing.titleRaw)
+        local titleNormalized = normalizeOptionalString(rawPairing.titleNormalized)
+        local displayTitle = normalizeOptionalString(rawPairing.displayTitle)
+        local closedAt = normalizeOptionalNumber(rawPairing.closedAt)
+
+        if windowId or bundleID or appName or titleRaw or titleNormalized or displayTitle or closedAt then
+          out[slot] = {
+            windowId = windowId,
+            bundleID = bundleID,
+            appName = appName,
+            titleRaw = titleRaw,
+            titleNormalized = titleNormalized,
+            displayTitle = displayTitle,
+            closedAt = closedAt,
+          }
+        end
+      end
     end
   end
 
@@ -122,11 +160,28 @@ end
 function SettingsStore.setWindowPairings(key, pairings)
   local payload = {}
   if type(pairings) == "table" then
-    for rawSlot, rawWindowId in pairs(pairings) do
+    for rawSlot, rawPairing in pairs(pairings) do
       local slot = normalizePositiveInteger(tonumber(rawSlot))
-      local windowId = normalizePositiveInteger(rawWindowId)
-      if slot and slot >= 1 and slot <= 9 and windowId then
-        payload[tostring(slot)] = windowId
+      if slot and slot >= 1 and slot <= 9 and type(rawPairing) == "table" then
+        local windowId = normalizePositiveInteger(rawPairing.windowId)
+        local bundleID = normalizeOptionalString(rawPairing.bundleID)
+        local appName = normalizeOptionalString(rawPairing.appName)
+        local titleRaw = normalizeOptionalString(rawPairing.titleRaw)
+        local titleNormalized = normalizeOptionalString(rawPairing.titleNormalized)
+        local displayTitle = normalizeOptionalString(rawPairing.displayTitle)
+        local closedAt = normalizeOptionalNumber(rawPairing.closedAt)
+
+        if windowId or bundleID or appName or titleRaw or titleNormalized or displayTitle or closedAt then
+          payload[tostring(slot)] = {
+            windowId = windowId,
+            bundleID = bundleID,
+            appName = appName,
+            titleRaw = titleRaw,
+            titleNormalized = titleNormalized,
+            displayTitle = displayTitle,
+            closedAt = closedAt,
+          }
+        end
       end
     end
   end
