@@ -332,7 +332,6 @@ function AppState:_formatUnpairToast(workspace, win)
     label = workspace.displayTitle or "[empty]"
   end
   return {
-    prefix = false,
     segments = {
       { text = string.format("Unpairing %s: ", workspace.label), color = TOAST_WHITE },
       { text = label, color = UNPAIR_TOAST_COLOR },
