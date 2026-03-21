@@ -6,6 +6,13 @@ AppState.__index = AppState
 local PAIR_TOAST_COLOR = { red = 0x7e / 255, green = 0xc8 / 255, blue = 0x7e / 255, alpha = 1 }
 local UNPAIR_TOAST_COLOR = { red = 0xc0 / 255, green = 0x40 / 255, blue = 0x30 / 255, alpha = 1 }
 local TOAST_WHITE = { white = 1, alpha = 1 }
+local DEBUG_STATE_KEYS = {
+  "lastAction",
+  "lastSlot",
+  "lastFocusResult",
+  "lastPairingMutation",
+  "lastYoutubeAction",
+}
 
 local function elapsedMs(startedAt)
   return (hs.timer.absoluteTime() - startedAt) / 1e6
@@ -38,11 +45,21 @@ function AppState.new(cfg, deps)
     workspaces = {},
     popover = nil,
     debugWindow = nil,
+    debugState = {
+      lastAction = nil,
+      lastSlot = nil,
+      lastFocusResult = nil,
+      lastPairingMutation = nil,
+      lastYoutubeAction = nil,
+    },
   }, AppState)
 
   for i = 1, 9 do
     self.workspaces[#self.workspaces + 1] = Workspace.new("Window " .. tostring(i), cfg.minimizeThreshold)
   end
+
+  self:_restoreWorkspacePairings()
+  self:_persistWorkspacePairings()
 
   return self
 end
@@ -60,12 +77,32 @@ function AppState:getConfig()
   return self.cfg
 end
 
+function AppState:getDebugState()
+  return self.debugState
+end
+
 function AppState:getWindowInfo(win)
   return self.windowService.getWindowInfo(win)
 end
 
 function AppState:getYouTubeTargetId()
   return self.youtubeService:getTargetId()
+end
+
+function AppState:_recordDebugAction(fields)
+  if type(fields) ~= "table" then
+    return
+  end
+
+  for _, key in ipairs(DEBUG_STATE_KEYS) do
+    if fields[key] ~= nil then
+      self.debugState[key] = fields[key]
+    end
+  end
+
+  if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
+    self.debugWindow:refreshIfShown()
+  end
 end
 
 function AppState:syncUi()
@@ -82,6 +119,7 @@ end
 
 function AppState:_runPairingAction(actionFn)
   actionFn()
+  self:_persistWorkspacePairings()
   self:syncUi()
   if self.cfg.popoverAutoHideAfterAction and self.popover and self.popover.hide then
     self.popover:hide()
@@ -90,6 +128,43 @@ end
 
 function AppState:_getWorkspace(index)
   return self.workspaces[index]
+end
+
+function AppState:_resolvePairedWindow(workspace)
+  if not workspace or not workspace.id then
+    return nil
+  end
+  return self.windowService.getWindowById(workspace.id)
+end
+
+function AppState:_workspacePairingSnapshot()
+  local pairings = {}
+  for index, workspace in ipairs(self.workspaces) do
+    if workspace and workspace.id then
+      pairings[index] = workspace.id
+    end
+  end
+  return pairings
+end
+
+function AppState:_persistWorkspacePairings()
+  self.settingsStore.setWindowPairings(
+    configModule.keys.workspacePairings,
+    self:_workspacePairingSnapshot()
+  )
+end
+
+function AppState:_restoreWorkspacePairings()
+  local pairings = self.settingsStore.getWindowPairings(configModule.keys.workspacePairings)
+  for index, windowId in pairs(pairings) do
+    local workspace = self:_getWorkspace(index)
+    if workspace then
+      local win = self.windowService.getWindowById(windowId)
+      if win then
+        workspace:pair(windowId, self.windowService.displayTitle(win))
+      end
+    end
+  end
 end
 
 function AppState:_refreshWorkspaceDisplayTitle(workspace, win)
@@ -171,6 +246,22 @@ function AppState:_clearWorkspace(workspace)
   workspace:clear()
 end
 
+function AppState:_clearWorkspaceAndPersist(workspace)
+  if not workspace then
+    return
+  end
+  self:_clearWorkspace(workspace)
+  self:_persistWorkspacePairings()
+end
+
+function AppState:_handleMissingPairedWindow(workspace, toastMessage)
+  self:_clearWorkspaceAndPersist(workspace)
+  if toastMessage then
+    self.toast(toastMessage)
+  end
+  return "cleared_missing_paired_window"
+end
+
 function AppState:pairSlot(index, sourceWindow)
   local workspace = self:_getWorkspace(index)
   if not workspace then
@@ -180,6 +271,10 @@ function AppState:pairSlot(index, sourceWindow)
   local win = sourceWindow
   if not win then
     self.toast("No window to pair!")
+    self:_recordDebugAction({
+      lastAction = "pair_slot_missing_window",
+      lastSlot = index,
+    })
     return
   end
 
@@ -187,23 +282,35 @@ function AppState:pairSlot(index, sourceWindow)
     self:_pairWorkspace(workspace, win:id(), win)
     self.toast(self:_formatPairToast(workspace, win), 2.0)
   end)
+  self:_recordDebugAction({
+    lastAction = "pair_slot",
+    lastSlot = index,
+    lastPairingMutation = "pair",
+  })
 end
 
 function AppState:activateSlot(index)
   local startedAt = hs.timer.absoluteTime()
   local workspace = self:_getWorkspace(index)
   if not workspace then
-    debugLog(self.cfg, "activateSlot slot=%d result=missing-workspace durationMs=%.2f", index, elapsedMs(startedAt))
+    local result = "missing_workspace"
+    self:_recordDebugAction({
+      lastAction = result,
+      lastSlot = index,
+    })
+    debugLog(self.cfg, "activateSlot slot=%d result=%s durationMs=%.2f", index, result, elapsedMs(startedAt))
     return
   end
 
   local result = "noop"
+  local focusCode = nil
+  local pairingMutation = nil
 
   self:_runPairingAction(function()
     local win = hs.window.frontmostWindow()
     if not win then
       self.toast("No active window found!")
-      result = "no-frontmost-window"
+      result = "no_frontmost_window"
       return
     end
 
@@ -211,37 +318,44 @@ function AppState:activateSlot(index)
     if not workspace:isPaired() then
       self:_pairWorkspace(workspace, currentId, win)
       self.toast(self:_formatPairToast(workspace, win), 2.0)
-      result = "paired-current-window"
+      result = "paired_current_window"
+      pairingMutation = "pair"
       return
     end
 
     if currentId ~= workspace.id then
-      local paired = self.windowService.getWindowById(workspace.id)
+      local paired = self:_resolvePairedWindow(workspace)
       if paired then
         workspace:resetInputBuffer()
-        self.windowService.focusOrRestoreFast(paired, self.cfg)
+        local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
+        focusCode = focusResult.code
         self:_refreshWorkspaceDisplayTitle(workspace, paired)
-        result = "focus-requested"
+        result = focusResult.code
       else
-        self:_clearWorkspace(workspace)
-        self.toast("[Paired window missing; cleared]")
-        result = "cleared-missing-paired-window"
+        result = self:_handleMissingPairedWindow(workspace, "[Paired window missing; cleared]")
+        pairingMutation = "clear_missing"
       end
       return
     end
 
-    local paired = self.windowService.getWindowById(workspace.id)
+    local paired = self:_resolvePairedWindow(workspace) or win
     workspace:consumeRepeatPress()
     if paired and workspace:shouldMinimize() then
       workspace:resetInputBuffer()
       paired:minimize()
-      result = "minimized-paired-window"
+      result = "minimized_paired_window"
       return
     end
 
-    result = "repeat-press-buffered"
+    result = "repeat_press_buffered"
   end)
 
+  self:_recordDebugAction({
+    lastAction = result,
+    lastSlot = index,
+    lastFocusResult = focusCode,
+    lastPairingMutation = pairingMutation,
+  })
   debugLog(self.cfg, "activateSlot slot=%d result=%s durationMs=%.2f", index, result, elapsedMs(startedAt))
 end
 
@@ -251,16 +365,23 @@ function AppState:unpairSlot(index)
     return
   end
 
+  local didUnpair = false
   self:_runPairingAction(function()
     if workspace:isPaired() then
-      local win = self.windowService.getWindowById(workspace.id)
+      local win = self:_resolvePairedWindow(workspace)
       local toastPayload = self:_formatUnpairToast(workspace, win)
       self:_clearWorkspace(workspace)
       self.toast(toastPayload)
+      didUnpair = true
     else
       self.toast(workspace.label .. " is already unpaired!")
     end
   end)
+  self:_recordDebugAction({
+    lastAction = didUnpair and "unpair_slot" or "unpair_slot_noop",
+    lastSlot = index,
+    lastPairingMutation = didUnpair and "unpair" or nil,
+  })
 end
 
 function AppState:unpairAll()
@@ -270,6 +391,10 @@ function AppState:unpairAll()
     end
     self.toast("[Unpaired All Windows]")
   end)
+  self:_recordDebugAction({
+    lastAction = "unpair_all",
+    lastPairingMutation = "unpair_all",
+  })
 end
 
 function AppState:togglePopover()
@@ -319,14 +444,28 @@ function AppState:handleWindowEvent(event, win)
     self.youtubeService:handleDestroyedWindowId(deadId)
 
     local changed = false
+    local firstChangedSlot = nil
     for _, workspace in ipairs(self.workspaces) do
       if workspace.id == deadId then
-        self:_clearWorkspace(workspace)
+        if not firstChangedSlot then
+          for index, candidate in ipairs(self.workspaces) do
+            if candidate == workspace then
+              firstChangedSlot = index
+              break
+            end
+          end
+        end
+        self:_clearWorkspaceAndPersist(workspace)
         changed = true
       end
     end
 
     if changed then
+      self:_recordDebugAction({
+        lastAction = "window_destroyed",
+        lastSlot = firstChangedSlot,
+        lastPairingMutation = "clear_destroyed",
+      })
       self.toast("[Cleared pairing: window closed]")
       self:syncUi()
     end
@@ -403,7 +542,15 @@ function AppState:handlePopoverAction(body)
 end
 
 function AppState:sendYoutubeCommand(keyPress)
-  self.youtubeService:sendCommand(keyPress)
+  local result = self.youtubeService:sendCommand(keyPress)
+  if result then
+    self:_recordDebugAction({
+      lastAction = "youtube_command",
+      lastFocusResult = result.focusResult,
+      lastYoutubeAction = result.code,
+    })
+  end
+  return result
 end
 
 function AppState:spotifyPrevious()

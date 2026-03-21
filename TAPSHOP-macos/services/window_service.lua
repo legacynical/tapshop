@@ -1,6 +1,14 @@
 local WindowService = {}
 local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
 
+local function focusResult(ok, code, win)
+  return {
+    ok = ok,
+    code = code,
+    windowId = win and win:id() or nil,
+  }
+end
+
 local function elapsedMs(startedAt)
   return (hs.timer.absoluteTime() - startedAt) / 1e6
 end
@@ -114,12 +122,12 @@ function WindowService.focusOrRestore(win, cfg)
   local startedAt = hs.timer.absoluteTime()
   if not win then
     debugLog(cfg, "focus.verified result=missing-window durationMs=%.2f", elapsedMs(startedAt))
-    return false
+    return focusResult(false, "missing_window", nil)
   end
 
   if isFrontmost(win) then
     debugLog(cfg, "focus.verified result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
-    return true
+    return focusResult(true, "already_frontmost", win)
   end
 
   requestFocus(win)
@@ -131,25 +139,25 @@ function WindowService.focusOrRestore(win, cfg)
     tostring(win:id()),
     elapsedMs(startedAt)
   )
-  return focused
+  return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
 end
 
 function WindowService.focusOrRestoreFast(win, cfg)
   local startedAt = hs.timer.absoluteTime()
   if not win then
     debugLog(cfg, "focus.fast result=missing-window durationMs=%.2f", elapsedMs(startedAt))
-    return false
+    return focusResult(false, "missing_window", nil)
   end
 
   if isFrontmost(win) then
     debugLog(cfg, "focus.fast result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
-    return true
+    return focusResult(true, "already_frontmost", win)
   end
 
   requestFocus(win)
   scheduleFastFocusRetries(win)
   debugLog(cfg, "focus.fast result=focus-requested windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
-  return true
+  return focusResult(true, "focus_requested", win)
 end
 
 return WindowService

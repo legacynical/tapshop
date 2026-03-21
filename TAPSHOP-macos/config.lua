@@ -9,6 +9,7 @@ Config.keys = {
   popoverDebugWindow = "tapshop.popover.debugWindow",
   popoverTopLeft = "tapshop.popover.topLeft",
   popoverSize = "tapshop.popover.size",
+  workspacePairings = "tapshop.workspace.pairings",
 }
 
 local DEFAULTS = {

@@ -111,18 +111,31 @@ function YoutubeService:sendCommand(keyPress)
   local target = self:getTargetWindow()
   if not target then
     self.toast("YouTube window not found.")
-    return
+    return {
+      ok = false,
+      code = "target_missing",
+      focusResult = nil,
+    }
   end
 
   local targetApp = target:application()
   if self.cfg.youtubeDirectDispatch and targetApp and sendKeyStrokes(self.cfg, keyPress, targetApp) then
-    return
+    return {
+      ok = true,
+      code = "direct_dispatch",
+      focusResult = nil,
+    }
   end
 
   local previousWindow = hs.window.frontmostWindow()
-  if not self.windowService.focusOrRestore(target, self.cfg) then
+  local focusResult = self.windowService.focusOrRestore(target, self.cfg)
+  if not focusResult.ok then
     self.toast("Focus failed for YT window")
-    return
+    return {
+      ok = false,
+      code = "focus_failed",
+      focusResult = focusResult.code,
+    }
   end
 
   sleepSeconds(self.cfg.inputDelay)
@@ -131,6 +144,12 @@ function YoutubeService:sendCommand(keyPress)
   if previousWindow and previousWindow:id() ~= target:id() then
     self.windowService.focusOrRestore(previousWindow, self.cfg)
   end
+
+  return {
+    ok = true,
+    code = "focused_and_sent",
+    focusResult = focusResult.code,
+  }
 end
 
 return YoutubeService

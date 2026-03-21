@@ -68,6 +68,7 @@ function DebugWindow.new(app, cfg, deps)
     local frontmostInfo = app:getWindowInfo(hs.window.frontmostWindow())
     local popoverState = (deps.popover and deps.popover.getDebugState) and deps.popover:getDebugState() or nil
     local ytTargetInfo = app:getYouTubeTargetId() and app:getWindowInfo(windowService.getWindowById(app:getYouTubeTargetId())) or nil
+    local appDebugState = app:getDebugState() or {}
 
     lines[#lines + 1] = windowInfoLine("frontmostWindow", frontmostInfo)
     lines[#lines + 1] = windowInfoLine("activeWindow", popoverState and popoverState.activeWindow or nil)
@@ -75,6 +76,27 @@ function DebugWindow.new(app, cfg, deps)
     lines[#lines + 1] = windowInfoLine("targetWindow", ytTargetInfo)
     lines[#lines + 1] = string.format("popoverShown = %s", tostring(popoverState and popoverState.isShown or false))
     lines[#lines + 1] = string.format("ytTargetId = %s", tostring(app:getYouTubeTargetId()))
+    lines[#lines + 1] = string.format("lastAction = %s", tostring(appDebugState.lastAction))
+    lines[#lines + 1] = string.format("lastSlot = %s", tostring(appDebugState.lastSlot))
+    lines[#lines + 1] = string.format("lastFocusResult = %s", tostring(appDebugState.lastFocusResult))
+    lines[#lines + 1] = string.format("lastPairingMutation = %s", tostring(appDebugState.lastPairingMutation))
+    lines[#lines + 1] = string.format("lastYoutubeAction = %s", tostring(appDebugState.lastYoutubeAction))
+
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "workspaces = ["
+    for index, workspace in ipairs(app:getWorkspaces()) do
+      local pairedWin = workspace.id and windowService.getWindowById(workspace.id) or nil
+      lines[#lines + 1] = string.format(
+        "  [%d] { paired = %s, id = %s, resolved = %s, minimized = %s, displayTitle = %q }",
+        index,
+        tostring(workspace:isPaired()),
+        tostring(workspace.id),
+        tostring(pairedWin ~= nil),
+        tostring(pairedWin and pairedWin:isMinimized() or false),
+        tostring(workspace.displayTitle or "[empty]")
+      )
+    end
+    lines[#lines + 1] = "]"
 
     return table.concat(lines, "\n")
   end
