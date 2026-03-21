@@ -5,8 +5,10 @@ function Toast.new(cfg)
   local timer = nil
   local background = nil
   local textBox = nil
+  local defaultSecs = 2.0
   local defaultTextColor = { white = 1, alpha = 1 }
   local prefixColor = { white = 1, alpha = 0.55 }
+  local hiddenPrefixColor = { white = 1, alpha = 0 }
 
   local function styledChunk(text, color)
     return hs.styledtext.new(tostring(text), {
@@ -60,6 +62,10 @@ function Toast.new(cfg)
   end
 
   local function destroy()
+    if timer then
+      timer:stop()
+      timer = nil
+    end
     if background then
       background:delete()
       background = nil
@@ -70,16 +76,24 @@ function Toast.new(cfg)
     end
   end
 
-  local function render(secs)
+  local function render()
     local styledText = nil
+    local showPrefixes = #lines > 1
     for i = 1, #lines do
       local line = normalizeLine(lines[i])
       if styledText then
         styledText = styledText .. styledChunk("\n", defaultTextColor)
       end
-      if line.prefix ~= false then
-        local prefix = (i == #lines) and "> " or "  "
-        styledText = (styledText or styledChunk("", defaultTextColor)) .. styledChunk(prefix, prefixColor)
+      if showPrefixes then
+        styledText = (styledText or styledChunk("", defaultTextColor))
+        if i == #lines then
+          styledText = styledText .. styledChunk("> ", prefixColor)
+        else
+          -- Reserve the same glyph width as "> " without showing the marker.
+          styledText = styledText
+            .. styledChunk(">", hiddenPrefixColor)
+            .. styledChunk(" ", prefixColor)
+        end
       end
       for _, segment in ipairs(line.segments) do
         styledText = (styledText or styledChunk("", defaultTextColor))
@@ -116,11 +130,14 @@ function Toast.new(cfg)
 
     background:show()
     textBox:show()
+  end
 
+  local function scheduleClear(secs)
     if timer then
       timer:stop()
       timer = nil
     end
+
     timer = hs.timer.doAfter(secs, function()
       lines = {}
       destroy()
@@ -132,7 +149,8 @@ function Toast.new(cfg)
     if #lines > cfg.tapshopMsgMaxLines then
       table.remove(lines, 1)
     end
-    render(secs or 2.0)
+    render()
+    scheduleClear(secs ~= nil and secs or defaultSecs)
   end
 end
 
