@@ -115,20 +115,24 @@ end
 
 function AppState:_refreshPairedWorkspaceTitlesForWindow(win)
   if not win then
-    return
+    return false
   end
 
   local id = win:id()
   if not id then
-    return
+    return false
   end
 
   local title = self.windowService.displayTitle(win)
+  local matchedWorkspace = false
   for _, workspace in ipairs(self.workspaces) do
     if workspace.id == id then
+      matchedWorkspace = true
       workspace:setDisplayTitle(title)
     end
   end
+
+  return matchedWorkspace
 end
 
 function AppState:_pairWorkspace(workspace, windowId, win)
@@ -329,8 +333,21 @@ function AppState:handleWindowEvent(event, win)
     return
   end
 
-  self:_refreshPairedWorkspaceTitlesForWindow(win)
+  local pairedWorkspaceTouched = self:_refreshPairedWorkspaceTitlesForWindow(win)
   self.youtubeService:handleWindowCandidate(win)
+
+  local shouldRefreshPopover = event == hs.window.filter.windowFocused or pairedWorkspaceTouched
+  if win then
+    local frontmost = hs.window.frontmostWindow()
+    if frontmost and frontmost:id() == win:id() then
+      shouldRefreshPopover = true
+    end
+  end
+
+  if shouldRefreshPopover and self.popover and self.popover.refreshIfShown then
+    self.popover:refreshIfShown()
+  end
+
   if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
     self.debugWindow:refreshIfShown()
   end
