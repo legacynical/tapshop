@@ -1,6 +1,13 @@
 local WindowService = {}
 local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
 
+local function normalizeWindowTitle(title)
+  local normalized = tostring(title or ""):lower()
+  normalized = normalized:gsub("%s+", " ")
+  normalized = normalized:match("^%s*(.-)%s*$") or ""
+  return normalized
+end
+
 local function focusResult(ok, code, win)
   return {
     ok = ok,
@@ -77,7 +84,7 @@ function WindowService.candidateWindows()
   local wins = hs.window.orderedWindows()
   local out = {}
   for _, win in ipairs(wins) do
-    if win and win:isVisible() and win:isStandard() and (win:title() or ""):match("%S") then
+    if WindowService.isCandidateWindow(win) then
       out[#out + 1] = win
     end
   end
@@ -104,6 +111,34 @@ function WindowService.displayTitle(win)
   end
 
   return "[" .. prefix .. "] " .. title
+end
+
+function WindowService.normalizeWindowTitle(title)
+  return normalizeWindowTitle(title)
+end
+
+function WindowService.pairingMetadata(win)
+  if not win then
+    return nil
+  end
+
+  local app = win:application()
+  local title = win:title() or ""
+  return {
+    bundleID = app and app:bundleID() or "",
+    appName = app and app:name() or "",
+    titleRaw = title,
+    titleNormalized = normalizeWindowTitle(title),
+    displayTitle = WindowService.displayTitle(win),
+  }
+end
+
+function WindowService.isCandidateWindow(win)
+  if not win then
+    return false
+  end
+
+  return win:isVisible() and win:isStandard() and (win:title() or ""):match("%S") ~= nil
 end
 
 function WindowService.waitForFrontmost(win, cfg)

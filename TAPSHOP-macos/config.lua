@@ -15,6 +15,7 @@ Config.keys = {
 local DEFAULTS = {
   inputDelay = 0.05,
   minimizeThreshold = 2,
+  relaunchRecoveryTimeout = 8,
   isGuiDebugMode = false,
   isHotkeyDebugMode = false,
   focusWaitTimeout = 0.22,
