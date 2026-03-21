@@ -32,7 +32,7 @@ function Render.buildHtml(ctx)
   local parts = {
     "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n",
     ctx.css,
-    "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\">TAPSHOP</span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">",
+    "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">",
     html.escape(ctx.primaryLine),
     "</span>\n        <span class=\"header-secondary\">",
     html.escape(ctx.secondaryLine),
