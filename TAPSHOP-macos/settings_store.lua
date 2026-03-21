@@ -5,6 +5,22 @@ local function clampOpacityValue(value)
   return math.max(40, math.min(100, snapped)) / 100
 end
 
+local function normalizePositiveInteger(value)
+  if type(value) ~= "number" then
+    return nil
+  end
+  if value < 1 then
+    return nil
+  end
+
+  local normalized = math.floor(value)
+  if normalized ~= value then
+    return nil
+  end
+
+  return normalized
+end
+
 function SettingsStore.getBoolean(key, defaultValue)
   local value = hs.settings.get(key)
   if type(value) == "boolean" then
@@ -83,6 +99,39 @@ function SettingsStore.setSize(key, size)
     w = math.floor(size.w),
     h = math.floor(size.h),
   })
+end
+
+function SettingsStore.getWindowPairings(key)
+  local value = hs.settings.get(key)
+  local out = {}
+  if type(value) ~= "table" then
+    return out
+  end
+
+  for rawSlot, rawWindowId in pairs(value) do
+    local slot = normalizePositiveInteger(tonumber(rawSlot))
+    local windowId = normalizePositiveInteger(rawWindowId)
+    if slot and slot >= 1 and slot <= 9 and windowId then
+      out[slot] = windowId
+    end
+  end
+
+  return out
+end
+
+function SettingsStore.setWindowPairings(key, pairings)
+  local payload = {}
+  if type(pairings) == "table" then
+    for rawSlot, rawWindowId in pairs(pairings) do
+      local slot = normalizePositiveInteger(tonumber(rawSlot))
+      local windowId = normalizePositiveInteger(rawWindowId)
+      if slot and slot >= 1 and slot <= 9 and windowId then
+        payload[tostring(slot)] = windowId
+      end
+    end
+  end
+
+  hs.settings.set(key, payload)
 end
 
 return SettingsStore
