@@ -17,7 +17,6 @@ function Popover.new(app, cfg, deps)
   local activeWin = nil
   local isDragging = false
   local isResizing = false
-  local lastHeaderSnapshot = nil
   local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
   local savedSize = settingsStore.getSize(configModule.keys.popoverSize)
 
@@ -111,19 +110,6 @@ function Popover.new(app, cfg, deps)
     return primaryLine, secondaryLine
   end
 
-  local function headerSnapshot(primaryLine, secondaryLine)
-    return {
-      primaryLine = primaryLine,
-      secondaryLine = secondaryLine,
-    }
-  end
-
-  local function headerSnapshotChanged(nextSnapshot)
-    return not lastHeaderSnapshot
-      or lastHeaderSnapshot.primaryLine ~= nextSnapshot.primaryLine
-      or lastHeaderSnapshot.secondaryLine ~= nextSnapshot.secondaryLine
-  end
-
   local function slotLabel(workspace, pairedWin)
     if not workspace:isPaired() then
       return "[empty]"
@@ -178,7 +164,6 @@ function Popover.new(app, cfg, deps)
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
     local primaryLine, secondaryLine = currentHeaderLines()
-    lastHeaderSnapshot = headerSnapshot(primaryLine, secondaryLine)
     local css = popoverStyles.buildCss(theme)
 
     if cfg.popoverDebugWindow then
@@ -371,16 +356,7 @@ function Popover.new(app, cfg, deps)
     else
       activeWin = hs.window.frontmostWindow() or activeWin
     end
-
-    if not panel:isShown() then
-      panel:markDirty()
-      return
-    end
-
-    local primaryLine, secondaryLine = currentHeaderLines()
-    if headerSnapshotChanged(headerSnapshot(primaryLine, secondaryLine)) then
-      panel:refresh()
-    end
+    self:refreshIfShown()
   end
 
   function instance:getDebugState()
