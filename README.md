@@ -111,6 +111,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 
 - YouTube targeting is title-based and browser-filtered. Expected title pattern includes ` - YouTube`; `Subscriptions - YouTube` is intentionally ignored.
 - Slot minimize behavior is threshold-based (`minimizeThreshold`), not immediate on first repeat press.
+- On macOS, slot pairings persist across Hammerspoon reloads/restarts by exact window ID; stale pairings are cleared automatically when the original window no longer exists.
 - On Windows, Spotify transport is sent using `WM_APPCOMMAND`; on macOS it uses Hammerspoon Spotify APIs + AppleScript helpers.
 
 ---
