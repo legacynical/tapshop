@@ -13,6 +13,7 @@ function Popover.new(app, cfg, deps)
   local settingsStore = deps.settingsStore
 
   local escTap = nil
+  local panel = nil
   local callerWin = nil
   local activeWin = nil
   local pendingActiveWin = nil
@@ -223,7 +224,7 @@ function Popover.new(app, cfg, deps)
     refreshTimer = hs.timer.doAfter(0, flushQueuedRefresh)
   end
 
-  local panel = webviewPanel.new({
+  panel = webviewPanel.new({
     messageHandler = "tapshop",
     initialRect = function()
       local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
