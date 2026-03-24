@@ -15,6 +15,9 @@ function Popover.new(app, cfg, deps)
   local escTap = nil
   local callerWin = nil
   local activeWin = nil
+  local pendingActiveWin = nil
+  local pendingRefresh = false
+  local refreshTimer = nil
   local isDragging = false
   local isResizing = false
   local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
@@ -186,6 +189,40 @@ function Popover.new(app, cfg, deps)
     }
   end
 
+  local function stopRefreshTimer()
+    if refreshTimer then
+      refreshTimer:stop()
+      refreshTimer = nil
+    end
+  end
+
+  local function flushQueuedRefresh()
+    pendingRefresh = false
+    stopRefreshTimer()
+
+    if pendingActiveWin ~= nil then
+      activeWin = pendingActiveWin
+      pendingActiveWin = nil
+    end
+
+    if panel:isShown() then
+      panel:refresh()
+      return
+    end
+
+    panel:markDirty()
+  end
+
+  local function queueRefresh()
+    if pendingRefresh then
+      return
+    end
+
+    pendingRefresh = true
+    stopRefreshTimer()
+    refreshTimer = hs.timer.doAfter(0, flushQueuedRefresh)
+  end
+
   local panel = webviewPanel.new({
     messageHandler = "tapshop",
     initialRect = function()
@@ -350,13 +387,17 @@ function Popover.new(app, cfg, deps)
     end
   end
 
+  function instance:requestRefresh(_)
+    queueRefresh()
+  end
+
+  function instance:requestActiveWindowUpdate(win)
+    pendingActiveWin = win or hs.window.frontmostWindow() or activeWin
+    queueRefresh()
+  end
+
   function instance:updateActiveWindow(win)
-    if win then
-      activeWin = win
-    else
-      activeWin = hs.window.frontmostWindow() or activeWin
-    end
-    self:refreshIfShown()
+    self:requestActiveWindowUpdate(win)
   end
 
   function instance:getDebugState()

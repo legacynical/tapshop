@@ -583,8 +583,8 @@ function AppState:handleWindowEvent(event, win)
     end
   end
 
-  if shouldRefreshPopover and self.popover and self.popover.refreshIfShown then
-    self.popover:refreshIfShown()
+  if shouldRefreshPopover and self.popover and self.popover.requestRefresh then
+    self.popover:requestRefresh("window_event")
   end
 
   if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
@@ -593,8 +593,8 @@ function AppState:handleWindowEvent(event, win)
 end
 
 function AppState:handleActiveWindowChange(win)
-  if self.popover and self.popover.updateActiveWindow then
-    self.popover:updateActiveWindow(win)
+  if self.popover and self.popover.requestActiveWindowUpdate then
+    self.popover:requestActiveWindowUpdate(win)
   end
   if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
     self.debugWindow:refreshIfShown()
