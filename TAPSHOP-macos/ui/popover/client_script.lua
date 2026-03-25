@@ -138,6 +138,73 @@ function clearValidationUi() {
   }
 }
 
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderHotkeyRowHtml(row) {
+  var classes = ["hotkey-row"];
+  if (row.isModified) classes.push("is-modified");
+  if (row.isUnavailable) classes.push("is-unavailable");
+  if (row.warning) classes.push("has-warning");
+  if ((row.conflictIds || []).length > 0) classes.push("has-conflict");
+
+  var rawKey = row.isAssigned ? String(row.key || "") : "";
+  var comboSearch = row.isAssigned ? ((row.mods || []).join(" ") + " " + rawKey).toLowerCase() : "";
+  var comboTitle = row.isAssigned ? "Current shortcut" : "No shortcut assigned";
+  var comboClass = row.isAssigned ? "hotkey-combo" : "hotkey-combo hotkey-combo-empty";
+  var comboInner = row.isAssigned ? comboHtml(row.mods, row.key) : '<span class="hotkey-unset">(unset)</span>';
+  var resetHtml = row.isModified
+    ? '<button type="button" class="btn hotkey-btn hotkey-reset-btn" title="Reset row" onclick="resetBinding('
+      + JSON.stringify(row.id)
+      + ')">Reset</button>'
+    : "";
+
+  return ''
+    + '<div class="' + classes.join(" ") + '"'
+    + ' data-hotkey-row'
+    + ' data-id="' + escapeHtml(row.id) + '"'
+    + ' data-label="' + escapeHtml(String(row.label || "").toLowerCase()) + '"'
+    + ' data-group="' + escapeHtml(String(row.group || "").toLowerCase()) + '"'
+    + ' data-key="' + escapeHtml(rawKey) + '"'
+    + ' data-mods="' + escapeHtml((row.mods || []).join(" ")) + '"'
+    + ' data-assigned="' + (row.isAssigned ? "1" : "0") + '"'
+    + ' data-combo="' + escapeHtml(comboSearch) + '">'
+    + '<div class="hotkey-main">'
+    + '<span class="hotkey-label">' + escapeHtml(row.label) + '</span>'
+    + '<div class="' + comboClass + '" title="' + escapeHtml(comboTitle) + '">' + comboInner + '</div>'
+    + '</div>'
+    + '<div class="hotkey-actions">'
+    + '<button type="button" class="btn hotkey-btn hotkey-remap-btn" title="Record shortcut" onclick="openRemapModal(' + JSON.stringify(row.id) + ')">Remap</button>'
+    + resetHtml
+    + '</div>'
+    + '</div>';
+}
+
+function renderHotkeyList(rows) {
+  var list = document.querySelector("[data-hotkeys-list]");
+  if (!list) return;
+
+  var html = "";
+  var currentGroup = null;
+  (rows || []).forEach(function (row) {
+    if (row.group !== currentGroup) {
+      if (currentGroup !== null) html += "</section>";
+      currentGroup = row.group;
+      html += '<section class="hotkey-group" data-hotkey-group="' + escapeHtml(String(row.group || "").toLowerCase()) + '">';
+      html += '<div class="hotkey-group-title">' + escapeHtml(row.group) + '</div>';
+    }
+    html += renderHotkeyRowHtml(row);
+  });
+  if (currentGroup !== null) html += "</section>";
+
+  list.innerHTML = html;
+}
+
 function showValidationUi(result) {
   clearValidationUi();
   if (!result || !result.message) return;
@@ -163,6 +230,16 @@ function showValidationUi(result) {
 
 window.tapshopApplyValidation = function (result) {
   showValidationUi(result || null);
+};
+
+window.tapshopApplyHotkeyState = function (state) {
+  state = state || {};
+  cancelRemapModal();
+  renderHotkeyList(state.rows || []);
+  document.body.setAttribute("data-settings-scroll-top", String(state.scrollTop || 0));
+  filterHotkeyRows(getSearchValue());
+  restoreSettingsScrollState();
+  showValidationUi(state.validation || null);
 };
 
 function toggleSettings() {

@@ -20,6 +20,7 @@ function Popover.new(app, cfg, deps)
   local refreshTimer = nil
   local isDragging = false
   local isResizing = false
+  local cachedThemeCss = nil
   local settingsState = {
     open = false,
     tab = "general",
@@ -127,6 +128,20 @@ function Popover.new(app, cfg, deps)
     panelRef:evaluateJavaScript("window.tapshopApplyValidation(" .. payload .. ")")
   end
 
+  local function pushHotkeyState(panelRef)
+    if not panelRef:isShown() then
+      return
+    end
+
+    local hotkeyState = app:getHotkeyUiState()
+    local payload = hs.json.encode({
+      rows = hotkeyState.rows or {},
+      validation = settingsState.validation,
+      scrollTop = settingsState.scrollTop or 0,
+    }) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplyHotkeyState(" .. payload .. ")")
+  end
+
   local function currentHeaderLines()
     local info = windowService.getWindowInfo(activeWin)
       or windowService.getWindowInfo(callerWin)
@@ -205,8 +220,23 @@ function Popover.new(app, cfg, deps)
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
     local primaryLine, secondaryLine = currentHeaderLines()
-    local css = popoverStyles.buildCss(theme)
-    local hotkeyState = app:getHotkeyUiState()
+    local css = cachedThemeCss or popoverStyles.buildCss(theme)
+    local shouldRenderHotkeys = settingsState.open and settingsState.tab == "hotkeys"
+    local hotkeyState = {
+      rows = {},
+      conflictsById = {},
+      overrides = {},
+    }
+    local hotkeysHtml = nil
+
+    if shouldRenderHotkeys then
+      hotkeyState = app:getHotkeyUiState()
+      if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
+        hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(popoverRender.buildHotkeysListHtml)
+      else
+        hotkeysHtml = popoverRender.buildHotkeysListHtml(hotkeyState.rows or {})
+      end
+    end
 
     if cfg.popoverDebugWindow then
       css = css .. "\n" .. debugStyles.css
@@ -232,6 +262,7 @@ function Popover.new(app, cfg, deps)
         validation = settingsState.validation,
       },
       hotkeys = hotkeyState.rows or {},
+      hotkeysHtml = hotkeysHtml,
       hotkeyConflicts = hotkeyState.conflictsById or {},
       hotkeyOverrides = hotkeyState.overrides or {},
       rows = buildRowsViewModel(),
@@ -366,6 +397,9 @@ function Popover.new(app, cfg, deps)
         settingsState.validation = nil
         if settingsState.open then
           settingsState.tab = normalizeSettingsTab(body.settingsTab)
+          if settingsState.tab == "hotkeys" then
+            pushHotkeyState(panelRef)
+          end
         else
           settingsState.search = ""
           settingsState.scrollTop = 0
@@ -383,6 +417,9 @@ function Popover.new(app, cfg, deps)
         settingsState.open = true
         settingsState.validation = nil
         settingsState.tab = normalizeSettingsTab(body.settingsTab)
+        if settingsState.tab == "hotkeys" then
+          pushHotkeyState(panelRef)
+        end
         return
       end
       if action == "setHotkeySearch" then
@@ -395,7 +432,7 @@ function Popover.new(app, cfg, deps)
       if action == "updateHotkeyBinding" or action == "resetHotkeyBinding" or action == "resetAllHotkeys" then
         if result and result.ok then
           settingsState.validation = nil
-          panelRef:refresh()
+          pushHotkeyState(panelRef)
         else
           settingsState.validation = result
           pushValidationState(panelRef, result)
@@ -457,9 +494,17 @@ function Popover.new(app, cfg, deps)
 
   function instance:refreshCache()
     panel:markDirty()
+    cachedThemeCss = nil
     panel:setLevel(currentPopoverLevel())
     if panel:isShown() then
       panel:refresh()
+    end
+  end
+
+  function instance:warmStaticCaches()
+    cachedThemeCss = popoverStyles.buildCss(popoverTheme.buildTheme(cfg))
+    if app.warmHotkeyUiCache then
+      app:warmHotkeyUiCache(popoverRender.buildHotkeysListHtml)
     end
   end
 

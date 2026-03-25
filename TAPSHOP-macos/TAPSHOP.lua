@@ -87,4 +87,18 @@ hotkeyManager:bindAll()
 
 toast("TAPSHOP ready (Hammerspoon)")
 
+hs.timer.doAfter(0.10, function()
+  local ok, err = pcall(function()
+    if app.warmHotkeyUiCache then
+      app:warmHotkeyUiCache()
+    end
+    if popover.warmStaticCaches then
+      popover:warmStaticCaches()
+    end
+  end)
+  if not ok then
+    hs.printf("[tapshop-warm] background warm failed: %s", tostring(err))
+  end
+end)
+
 return app
