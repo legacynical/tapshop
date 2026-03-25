@@ -21,6 +21,40 @@ var KEY_LABELS = {
   tab: "Tab"
 };
 
+var PHYSICAL_KEY_MAP = {
+  Backquote: "`",
+  Digit0: "0",
+  Digit1: "1",
+  Digit2: "2",
+  Digit3: "3",
+  Digit4: "4",
+  Digit5: "5",
+  Digit6: "6",
+  Digit7: "7",
+  Digit8: "8",
+  Digit9: "9",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Space: "space",
+  Tab: "tab",
+  Enter: "return",
+  Backspace: "delete",
+  Delete: "forwarddelete",
+  Escape: "escape",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down"
+};
+
 function currentSettingsTab() {
   return document.body.getAttribute("data-settings-tab") || "general";
 }
@@ -33,8 +67,12 @@ function getSearchInput() {
   return document.querySelector(".hotkey-search");
 }
 
+function getActiveSettingsPanel() {
+  return document.querySelector('.settings-panel[data-settings-panel="' + currentSettingsTab() + '"]');
+}
+
 function getSettingsScrollEl() {
-  return document.querySelector(".settings-scroll");
+  return getActiveSettingsPanel() || document.querySelector(".settings-scroll");
 }
 
 function getSearchValue() {
@@ -72,6 +110,9 @@ function setSettingsOpenState(open) {
 
 function setSettingsTabState(tab) {
   document.body.setAttribute("data-settings-tab", tab);
+  document.querySelectorAll("[data-settings-tab-button]").forEach(function (button) {
+    button.classList.toggle("is-active", button.getAttribute("data-settings-tab-button") === tab);
+  });
 }
 
 function restoreSettingsScrollState() {
@@ -167,8 +208,20 @@ function resetAllHotkeys() {
 }
 
 function normalizeKey(e) {
-  var key = e.key;
-  var map = {
+  var code = e.code || "";
+  var key = e.key || "";
+
+  if (PHYSICAL_KEY_MAP[code]) {
+    return PHYSICAL_KEY_MAP[code];
+  }
+
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.slice(3).toLowerCase();
+  }
+
+  if (/^F\d+$/.test(key)) return key;
+
+  var keyMap = {
     ArrowLeft: "left",
     ArrowRight: "right",
     ArrowUp: "up",
@@ -180,8 +233,7 @@ function normalizeKey(e) {
     " ": "space",
     Tab: "tab"
   };
-  if (/^F\d+$/.test(key)) return key;
-  return map[key] || key.toLowerCase();
+  return keyMap[key] || key.toLowerCase();
 }
 
 function displayKey(key) {

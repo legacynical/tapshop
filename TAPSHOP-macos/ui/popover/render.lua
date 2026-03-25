@@ -96,7 +96,7 @@ local function hotkeyRowHtml(row)
 
   local comboTitle = row.isAssigned and "Current shortcut" or "No shortcut assigned"
   local comboClass = row.isAssigned and "hotkey-combo" or "hotkey-combo hotkey-combo-empty"
-  local comboInner = comboHtml(row.mods, row.key)
+  local comboInner = row.isAssigned and comboHtml(row.mods, row.key) or '<span class="hotkey-unset">(unset)</span>'
   local rawKey = row.isAssigned and tostring(row.key) or ""
   local comboSearch = row.isAssigned and string.lower(table.concat(row.mods or {}, " ") .. " " .. rawKey) or ""
   local quotedId = html.escape(jsStringLiteral(row.id))
@@ -299,10 +299,10 @@ function Render.buildHtml(ctx)
   parts[#parts + 1] = "          <button type=\"button\" class=\"btn settings-back-btn\" onclick=\"closeSettings()\">Back</button>\n"
   parts[#parts + 1] = "          <div class=\"settings-head-main\">\n"
   parts[#parts + 1] = "            <div class=\"settings-tabs\">\n"
-  parts[#parts + 1] = "              <button type=\"button\" class=\"settings-tab"
+  parts[#parts + 1] = "              <button type=\"button\" data-settings-tab-button=\"general\" class=\"settings-tab"
   parts[#parts + 1] = generalActive
   parts[#parts + 1] = "\" onclick=\"switchSettingsTab('general')\">General</button>\n"
-  parts[#parts + 1] = "              <button type=\"button\" class=\"settings-tab"
+  parts[#parts + 1] = "              <button type=\"button\" data-settings-tab-button=\"hotkeys\" class=\"settings-tab"
   parts[#parts + 1] = hotkeysActive
   parts[#parts + 1] = "\" onclick=\"switchSettingsTab('hotkeys')\">Hotkeys</button>\n"
   parts[#parts + 1] = "            </div>\n"

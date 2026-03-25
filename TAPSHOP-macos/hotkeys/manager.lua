@@ -57,8 +57,23 @@ local function keyIsAvailable(key)
   end
   local map = hs.keycodes.map
   local raw = tostring(key or "")
+  if raw:match("^F%d+$") then
+    return map[raw] ~= nil
+  end
   local lowered = string.lower(raw)
-  return map[raw] or map[lowered]
+  if raw == lowered then
+    return map[raw] ~= nil
+  end
+  return map[raw] ~= nil or map[lowered] ~= nil
+end
+
+local function bindHotkeySafe(mods, key, fn)
+  local ok, bindingOrErr = pcall(hs.hotkey.bind, mods, key, fn)
+  if ok then
+    return bindingOrErr
+  end
+  hs.printf("[tapshop-hotkeys] failed to bind %s: %s", tostring(key), tostring(bindingOrErr))
+  return nil
 end
 
 local function normalizeIncomingKey(value)
@@ -187,7 +202,7 @@ function HotkeyManager:_bindFallbackIfNeeded()
   end
 
   local windowSeconds = FALLBACK_WINDOW_SECONDS
-  self.fallbackHotkey = hs.hotkey.bind(FALLBACK_MODS, FALLBACK_KEY, function()
+  self.fallbackHotkey = bindHotkeySafe(FALLBACK_MODS, FALLBACK_KEY, function()
     local now = hs.timer.secondsSinceEpoch()
     local presses = {}
     for _, ts in ipairs(self.fallbackPresses) do
@@ -213,10 +228,10 @@ function HotkeyManager:bindAll()
   for _, binding in ipairs(self.defaults) do
     local resolved = self.resolvedById[binding.id]
     if resolved and isBindingAssigned(resolved) and not self.conflictsById[resolved.id] then
-      if resolved.guarded and not keyIsAvailable(resolved.key) then
+      if not keyIsAvailable(resolved.key) then
         goto continue
       end
-      self.liveHotkeys[resolved.id] = hs.hotkey.bind(resolved.mods, resolved.key, function()
+      self.liveHotkeys[resolved.id] = bindHotkeySafe(resolved.mods, resolved.key, function()
         self:_dispatch(resolved)
       end)
     end
@@ -244,8 +259,8 @@ function HotkeyManager:_warningFor(binding)
   if SYSTEM_SHORTCUTS[combo] then
     return "Likely reserved by macOS: " .. SYSTEM_SHORTCUTS[combo]
   end
-  if binding.guarded and not keyIsAvailable(binding.key) then
-    return "Key is unavailable on this keyboard."
+  if not keyIsAvailable(binding.key) then
+    return "Key is unavailable in the current keyboard layout."
   end
   return nil
 end
@@ -266,7 +281,7 @@ function HotkeyManager:_buildUiRows()
       enabled = binding.enabled == true,
       guarded = binding.guarded == true,
       isModified = overrides[binding.id] ~= nil,
-      isUnavailable = isBindingAssigned(binding) and binding.guarded and not keyIsAvailable(binding.key),
+      isUnavailable = isBindingAssigned(binding) and not keyIsAvailable(binding.key),
       conflictIds = cloneArray(self.conflictsById[binding.id]),
       warning = warning,
     }
@@ -376,6 +391,16 @@ function HotkeyManager:updateBinding(id, payload)
           [id] = {},
         },
         message = "Shortcut key is invalid.",
+      }
+    end
+    if normalizedKey ~= false and not keyIsAvailable(normalizedKey) then
+      return {
+        ok = false,
+        code = "unavailable_key",
+        ids = {
+          [id] = {},
+        },
+        message = "Shortcut key is unavailable in the current keyboard layout.",
       }
     end
     candidate.key = normalizedKey
