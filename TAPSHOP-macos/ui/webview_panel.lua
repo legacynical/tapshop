@@ -77,6 +77,11 @@ function WebviewPanel.new(opts)
     end
   end
 
+  function panel:evaluateJavaScript(script)
+    local view = ensureWebview()
+    return view:evaluateJavaScript(script)
+  end
+
   function panel:refresh()
     local view = ensureWebview()
     cachedHtml = opts.buildHtml(panel)

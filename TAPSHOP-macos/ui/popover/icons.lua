@@ -20,6 +20,10 @@ local ICON_SVGS = {
 <path d="M3 6h18" />
 <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 ]=],
+  restore = [=[
+<path d="M3 2v6h6" />
+<path d="M3 8a9 9 0 1 0 3-6.7L3 4" />
+]=],
 }
 
 function Icons.iconSvg(name)
@@ -43,18 +47,6 @@ function Icons.headerIconButton(opts)
     .. '">'
     .. Icons.iconSvg(opts.icon)
     .. "</button>"
-end
-
-function Icons.configIconTrigger(opts)
-  local tooltip = html.escape(opts.tooltip)
-  local ariaLabel = html.escape(opts.ariaLabel or opts.tooltip)
-  return '<summary class="config-trigger icon-only" aria-label="'
-    .. ariaLabel
-    .. '" data-tooltip="'
-    .. tooltip
-    .. '">'
-    .. Icons.iconSvg(opts.icon)
-    .. "</summary>"
 end
 
 return Icons
