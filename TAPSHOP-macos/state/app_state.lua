@@ -43,6 +43,7 @@ function AppState.new(cfg, deps)
     spotifyService = deps.spotifyService,
     toast = deps.toast,
     workspaces = {},
+    hotkeyManager = nil,
     popover = nil,
     debugWindow = nil,
     debugState = {
@@ -67,6 +68,10 @@ end
 function AppState:attachUi(popover, debugWindow)
   self.popover = popover
   self.debugWindow = debugWindow
+end
+
+function AppState:attachHotkeyManager(hotkeyManager)
+  self.hotkeyManager = hotkeyManager
 end
 
 function AppState:getWorkspaces()
@@ -124,6 +129,12 @@ function AppState:_runPairingAction(actionFn)
   if self.cfg.popoverAutoHideAfterAction and self.popover and self.popover.hide then
     self.popover:hide()
   end
+end
+
+function AppState:_runWorkspaceAction(actionFn)
+  actionFn()
+  self:_persistWorkspacePairings()
+  self:syncUi()
 end
 
 function AppState:_getWorkspace(index)
@@ -403,7 +414,7 @@ function AppState:activateSlot(index)
   local focusCode = nil
   local pairingMutation = nil
 
-  self:_runPairingAction(function()
+  self:_runWorkspaceAction(function()
     local win = hs.window.frontmostWindow()
     if not win then
       self.toast("No active window found!")
@@ -500,6 +511,12 @@ function AppState:togglePopover()
   end
 end
 
+function AppState:showPopover()
+  if self.popover and self.popover.show then
+    self.popover:show()
+  end
+end
+
 function AppState:setPopoverAutoHide(enabled)
   self.cfg.popoverAutoHideAfterAction = enabled == true
   self.settingsStore.setBoolean(configModule.keys.popoverAutoHideAfterAction, self.cfg.popoverAutoHideAfterAction)
@@ -529,6 +546,75 @@ function AppState:setDebugWindow(enabled)
   self.cfg.popoverDebugWindow = enabled == true
   self.settingsStore.setBoolean(configModule.keys.popoverDebugWindow, self.cfg.popoverDebugWindow)
   self:syncUi()
+end
+
+function AppState:getHotkeyUiState()
+  if not self.hotkeyManager or not self.hotkeyManager.getUiState then
+    return {
+      rows = {},
+      conflictsById = {},
+      overrides = {},
+      recordingSupported = false,
+    }
+  end
+  return self.hotkeyManager:getUiState()
+end
+
+function AppState:warmHotkeyUiCache(rendererFn)
+  if not self.hotkeyManager then
+    return
+  end
+  if self.hotkeyManager.warmUiState then
+    self.hotkeyManager:warmUiState()
+  end
+  if rendererFn and self.hotkeyManager.warmHtml then
+    self.hotkeyManager:warmHtml(rendererFn)
+  end
+end
+
+function AppState:updateHotkeyBinding(id, payload)
+  if not self.hotkeyManager or not self.hotkeyManager.updateBinding then
+    return {
+      ok = false,
+      code = "missing_manager",
+      ids = {
+        [tostring(id or "")] = {},
+      },
+      message = "Hotkey manager unavailable.",
+    }
+  end
+
+  local result = self.hotkeyManager:updateBinding(id, payload or {})
+  return result
+end
+
+function AppState:resetHotkeyBinding(id)
+  if not self.hotkeyManager or not self.hotkeyManager.resetBinding then
+    return {
+      ok = false,
+      code = "missing_manager",
+      ids = {
+        [tostring(id or "")] = {},
+      },
+      message = "Hotkey manager unavailable.",
+    }
+  end
+
+  local result = self.hotkeyManager:resetBinding(id)
+  return result
+end
+
+function AppState:resetAllHotkeys()
+  if not self.hotkeyManager or not self.hotkeyManager.resetAll then
+    return {
+      ok = false,
+      code = "missing_manager",
+      message = "Hotkey manager unavailable.",
+    }
+  end
+
+  local result = self.hotkeyManager:resetAll()
+  return result
 end
 
 function AppState:handleWindowEvent(event, win)
@@ -638,6 +724,20 @@ function AppState:handlePopoverAction(body)
   end
   if action == "setDebugWindow" then
     self:setDebugWindow(tonumber(body.slot) == 1)
+    return
+  end
+  if action == "updateHotkeyBinding" then
+    return self:updateHotkeyBinding(body.id, {
+      mods = body.mods,
+      key = body.key,
+      enabled = body.enabled,
+    })
+  end
+  if action == "resetHotkeyBinding" then
+    return self:resetHotkeyBinding(body.id)
+  end
+  if action == "resetAllHotkeys" then
+    return self:resetAllHotkeys()
   end
 end
 

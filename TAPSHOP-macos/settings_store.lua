@@ -1,5 +1,12 @@
 local SettingsStore = {}
 
+local VALID_MODS = {
+  cmd = true,
+  alt = true,
+  ctrl = true,
+  shift = true,
+}
+
 local function clampOpacityValue(value)
   local snapped = math.floor((value * 100) / 10 + 0.5) * 10
   return math.max(40, math.min(100, snapped)) / 100
@@ -33,6 +40,41 @@ local function normalizeOptionalNumber(value)
     return nil
   end
   return value
+end
+
+local function normalizeHotkeyMods(value)
+  if type(value) ~= "table" then
+    return nil
+  end
+
+  local out = {}
+  local seen = {}
+  for _, rawMod in ipairs(value) do
+    if type(rawMod) == "string" and VALID_MODS[rawMod] and not seen[rawMod] then
+      seen[rawMod] = true
+      out[#out + 1] = rawMod
+    end
+  end
+
+  table.sort(out, function(a, b)
+    local order = { cmd = 1, alt = 2, ctrl = 3, shift = 4 }
+    return order[a] < order[b]
+  end)
+
+  return out
+end
+
+local function normalizeHotkeyKey(value)
+  if value == false then
+    return false
+  end
+  if type(value) ~= "string" or value == "" then
+    return nil
+  end
+  if value:match("^F%d+$") then
+    return value
+  end
+  return string.lower(value)
 end
 
 function SettingsStore.getBoolean(key, defaultValue)
@@ -113,6 +155,71 @@ function SettingsStore.setSize(key, size)
     w = math.floor(size.w),
     h = math.floor(size.h),
   })
+end
+
+function SettingsStore.getHotkeyOverrides(key)
+  local value = hs.settings.get(key)
+  local out = {}
+  if type(value) ~= "table" then
+    return out
+  end
+
+  for id, rawOverride in pairs(value) do
+    if type(id) == "string" and type(rawOverride) == "table" then
+      local normalized = {}
+      local mods = normalizeHotkeyMods(rawOverride.mods)
+      local hotkey = normalizeHotkeyKey(rawOverride.key)
+
+      if mods ~= nil then
+        normalized.mods = mods
+      end
+      if hotkey ~= nil then
+        normalized.key = hotkey
+      end
+      if type(rawOverride.enabled) == "boolean" then
+        normalized.enabled = rawOverride.enabled
+      end
+
+      if next(normalized) ~= nil then
+        out[id] = normalized
+      end
+    end
+  end
+
+  return out
+end
+
+function SettingsStore.setHotkeyOverrides(key, overrides)
+  local payload = {}
+  if type(overrides) == "table" then
+    for id, rawOverride in pairs(overrides) do
+      if type(id) == "string" and type(rawOverride) == "table" then
+        local normalized = {}
+        local mods = normalizeHotkeyMods(rawOverride.mods)
+        local hotkey = normalizeHotkeyKey(rawOverride.key)
+
+        if mods ~= nil then
+          normalized.mods = mods
+        end
+        if hotkey ~= nil then
+          normalized.key = hotkey
+        end
+        if type(rawOverride.enabled) == "boolean" then
+          normalized.enabled = rawOverride.enabled
+        end
+
+        if next(normalized) ~= nil then
+          payload[id] = normalized
+        end
+      end
+    end
+  end
+
+  hs.settings.set(key, payload)
+end
+
+function SettingsStore.clearSetting(key)
+  hs.settings.clear(key)
 end
 
 function SettingsStore.getWindowPairings(key)

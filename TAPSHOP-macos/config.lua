@@ -3,6 +3,7 @@ local settingsStore = require("settings_store")
 local Config = {}
 
 Config.keys = {
+  hotkeyOverrides = "tapshop.hotkeys.overrides",
   popoverAutoHideAfterAction = "tapshop.popover.autoHideAfterAction",
   popoverAlwaysOnTop = "tapshop.popover.alwaysOnTop",
   popoverBackgroundOpacity = "tapshop.popover.backgroundOpacity",

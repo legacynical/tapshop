@@ -104,6 +104,14 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 | `F22/F23/F24` | Optional Spotify like + volume bindings |
 | `Cmd + Option + Ctrl + ,/. / M` | System volume down/up/mute |
 
+Hotkeys can be remapped from the popover settings:
+
+1. Press `Cmd + Option + \`` to open the popover
+2. Click the cog icon in the header
+3. Use the `General` or `Hotkeys` tab
+
+If you remap the popover shortcut away from `Cmd + Option + \``, TAPSHOP keeps a hidden recovery path: press the default shortcut three times quickly to show the popover.
+
 <img width="499" height="408" alt="image" src="https://github.com/user-attachments/assets/b3109e53-944b-4f34-86e2-47e50035dbd0" />
 ---
 
@@ -126,6 +134,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 - macOS hotkeys not firing:
   - Confirm Hammerspoon Accessibility permission is enabled.
   - Some optional F-key bindings are only registered if that key exists in `hs.keycodes.map`.
+  - If you remapped the popover toggle and forgot it, press `Cmd + Option + \`` three times quickly to reopen the popover.
 - Spotify actions fail on macOS:
   - Open Spotify at least once and allow Automation prompts for Hammerspoon.
 
