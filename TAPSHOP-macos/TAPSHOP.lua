@@ -20,10 +20,10 @@ ensureModulePath()
 local Config = require("config")
 local settingsStore = require("settings_store")
 local AppState = require("state.app_state")
+local HotkeyManager = require("hotkeys.manager")
 local windowService = require("services.window_service")
 local YoutubeService = require("services.youtube_service")
 local SpotifyService = require("services.spotify_service")
-local Hotkeys = require("hotkeys")
 local Toast = require("ui.toast")
 local Popover = require("ui.popover")
 local DebugWindow = require("ui.debug_window")
@@ -40,6 +40,9 @@ local app = AppState.new(cfg, {
   spotifyService = spotifyService,
   toast = toast,
 })
+
+local hotkeyManager = HotkeyManager.new(app, settingsStore, Config.keys.hotkeyOverrides)
+app:attachHotkeyManager(hotkeyManager)
 
 local popover = Popover.new(app, cfg, {
   settingsStore = settingsStore,
@@ -80,7 +83,7 @@ end)
 app.windowFilter = windowFilter
 app.popoverWindowTracker = popoverWindowTracker
 
-Hotkeys.register(app)
+hotkeyManager:bindAll()
 
 toast("TAPSHOP ready (Hammerspoon)")
 
