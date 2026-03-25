@@ -115,6 +115,10 @@ function HotkeyManager.new(app, settingsStore, settingsKey)
     conflictsById = {},
     fallbackHotkey = nil,
     fallbackPresses = {},
+    uiStateCache = nil,
+    uiStateDirty = true,
+    htmlCache = nil,
+    htmlCacheDirty = true,
   }, HotkeyManager)
 
   self:resolve()
@@ -127,6 +131,13 @@ end
 
 function HotkeyManager:_saveOverrides(overrides)
   self.settingsStore.setHotkeyOverrides(self.settingsKey, overrides)
+end
+
+function HotkeyManager:invalidateUiCache()
+  self.uiStateCache = nil
+  self.uiStateDirty = true
+  self.htmlCache = nil
+  self.htmlCacheDirty = true
 end
 
 function HotkeyManager:resolve()
@@ -289,7 +300,7 @@ function HotkeyManager:_buildUiRows()
   return rows
 end
 
-function HotkeyManager:getUiState()
+function HotkeyManager:_buildUiState()
   self:resolve()
   return {
     rows = self:_buildUiRows(),
@@ -297,6 +308,41 @@ function HotkeyManager:getUiState()
     overrides = self:_loadOverrides(),
     recordingSupported = true,
   }
+end
+
+function HotkeyManager:warmUiState()
+  self:getUiState()
+end
+
+function HotkeyManager:getUiState()
+  if self.uiStateDirty or not self.uiStateCache then
+    self.uiStateCache = self:_buildUiState()
+    self.uiStateDirty = false
+  end
+  return self.uiStateCache
+end
+
+function HotkeyManager:getUiStateCached()
+  return self:getUiState()
+end
+
+function HotkeyManager:getHotkeyHtmlCached(rendererFn)
+  if type(rendererFn) ~= "function" then
+    return self.htmlCache
+  end
+  if self.htmlCacheDirty or not self.htmlCache then
+    self.htmlCache = rendererFn(self:getUiState().rows or {})
+    self.htmlCacheDirty = false
+  end
+  return self.htmlCache
+end
+
+function HotkeyManager:warmHtml(rendererFn)
+  if type(rendererFn) == "function" then
+    self:getHotkeyHtmlCached(rendererFn)
+  else
+    self:warmUiState()
+  end
 end
 
 function HotkeyManager:_buildOverride(binding)
@@ -431,6 +477,7 @@ function HotkeyManager:updateBinding(id, payload)
     overrides[id] = nil
   end
   self:_saveOverrides(overrides)
+  self:invalidateUiCache()
   self:bindAll()
 
   return {
@@ -443,6 +490,7 @@ function HotkeyManager:resetBinding(id)
   local overrides = self:_loadOverrides()
   overrides[id] = nil
   self:_saveOverrides(overrides)
+  self:invalidateUiCache()
   self:bindAll()
   return {
     ok = true,
@@ -451,6 +499,7 @@ end
 
 function HotkeyManager:resetAll()
   self.settingsStore.clearSetting(self.settingsKey)
+  self:invalidateUiCache()
   self:bindAll()
   return {
     ok = true,

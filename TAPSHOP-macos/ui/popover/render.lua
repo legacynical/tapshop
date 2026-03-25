@@ -176,6 +176,31 @@ local function generalTabHtml(config)
     .. "            </div>\n"
 end
 
+function Render.buildHotkeysListHtml(rows)
+  local parts = {}
+  local currentGroup = nil
+  for index, row in ipairs(rows or {}) do
+    if row.group ~= currentGroup then
+      currentGroup = row.group
+      parts[#parts + 1] = "                <section class=\"hotkey-group\" data-hotkey-group=\""
+      parts[#parts + 1] = html.escape(string.lower(row.group))
+      parts[#parts + 1] = "\">\n"
+      parts[#parts + 1] = "                  <div class=\"hotkey-group-title\">"
+      parts[#parts + 1] = html.escape(row.group)
+      parts[#parts + 1] = "</div>\n"
+    end
+
+    parts[#parts + 1] = hotkeyRowHtml(row)
+
+    local nextRow = rows[index + 1]
+    if not nextRow or nextRow.group ~= currentGroup then
+      parts[#parts + 1] = "                </section>\n"
+    end
+  end
+
+  return table.concat(parts)
+end
+
 local function hotkeysTabHtml(ctx)
   local parts = {
     "            <div class=\"settings-panel\" data-settings-panel=\"hotkeys\">\n",
@@ -191,26 +216,7 @@ local function hotkeysTabHtml(ctx)
   end
 
   parts[#parts + 1] = "              <div class=\"hotkeys-list\" data-hotkeys-list>\n"
-
-  local currentGroup = nil
-  for index, row in ipairs(ctx.hotkeys or {}) do
-    if row.group ~= currentGroup then
-      currentGroup = row.group
-      parts[#parts + 1] = "                <section class=\"hotkey-group\" data-hotkey-group=\""
-      parts[#parts + 1] = html.escape(string.lower(row.group))
-      parts[#parts + 1] = "\">\n"
-      parts[#parts + 1] = "                  <div class=\"hotkey-group-title\">"
-      parts[#parts + 1] = html.escape(row.group)
-      parts[#parts + 1] = "</div>\n"
-    end
-
-    parts[#parts + 1] = hotkeyRowHtml(row)
-
-    local nextRow = ctx.hotkeys[index + 1]
-    if not nextRow or nextRow.group ~= currentGroup then
-      parts[#parts + 1] = "                </section>\n"
-    end
-  end
+  parts[#parts + 1] = ctx.hotkeysHtml or Render.buildHotkeysListHtml(ctx.hotkeys or {})
 
   parts[#parts + 1] = "              </div>\n"
   parts[#parts + 1] = "            </div>\n"

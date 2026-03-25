@@ -560,6 +560,18 @@ function AppState:getHotkeyUiState()
   return self.hotkeyManager:getUiState()
 end
 
+function AppState:warmHotkeyUiCache(rendererFn)
+  if not self.hotkeyManager then
+    return
+  end
+  if self.hotkeyManager.warmUiState then
+    self.hotkeyManager:warmUiState()
+  end
+  if rendererFn and self.hotkeyManager.warmHtml then
+    self.hotkeyManager:warmHtml(rendererFn)
+  end
+end
+
 function AppState:updateHotkeyBinding(id, payload)
   if not self.hotkeyManager or not self.hotkeyManager.updateBinding then
     return {
@@ -573,9 +585,6 @@ function AppState:updateHotkeyBinding(id, payload)
   end
 
   local result = self.hotkeyManager:updateBinding(id, payload or {})
-  if result.ok then
-    self:syncUi()
-  end
   return result
 end
 
@@ -592,9 +601,6 @@ function AppState:resetHotkeyBinding(id)
   end
 
   local result = self.hotkeyManager:resetBinding(id)
-  if result.ok then
-    self:syncUi()
-  end
   return result
 end
 
@@ -608,9 +614,6 @@ function AppState:resetAllHotkeys()
   end
 
   local result = self.hotkeyManager:resetAll()
-  if result.ok then
-    self:syncUi()
-  end
   return result
 end
 
