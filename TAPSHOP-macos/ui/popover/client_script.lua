@@ -1,15 +1,323 @@
 local ClientScript = {}
 
 ClientScript.script = [=[
-function sendAction(action, slot, dx, dy, dw, dh, direction) {
-  window.webkit.messageHandlers.tapshop.postMessage({
-    action: action,
-    slot: slot || 0,
-    dx: dx || 0,
-    dy: dy || 0,
-    dw: dw || 0,
-    dh: dh || 0,
-    direction: direction || "",
+var MOD_SYMBOLS = {
+  cmd: "⌘",
+  alt: "⌥",
+  ctrl: "⌃",
+  shift: "⇧"
+};
+
+var KEY_LABELS = {
+  left: "Left",
+  right: "Right",
+  up: "Up",
+  down: "Down",
+  return: "Return",
+  delete: "Delete",
+  forwarddelete: "Forward Delete",
+  escape: "Esc",
+  space: "Space",
+  tab: "Tab"
+};
+
+function currentSettingsTab() {
+  return document.body.getAttribute("data-settings-tab") || "general";
+}
+
+function settingsOpen() {
+  return document.body.getAttribute("data-settings-open") === "1";
+}
+
+function getSearchInput() {
+  return document.querySelector(".hotkey-search");
+}
+
+function getSettingsScrollEl() {
+  return document.querySelector(".settings-scroll");
+}
+
+function getSearchValue() {
+  var input = getSearchInput();
+  return input ? input.value : "";
+}
+
+function getSettingsScrollTop() {
+  var el = getSettingsScrollEl();
+  return el ? el.scrollTop : 0;
+}
+
+function sendAction(action, extra) {
+  var payload = extra || {};
+  payload.action = action;
+  if (payload.slot == null) payload.slot = 0;
+  if (payload.dx == null) payload.dx = 0;
+  if (payload.dy == null) payload.dy = 0;
+  if (payload.dw == null) payload.dw = 0;
+  if (payload.dh == null) payload.dh = 0;
+  if (payload.direction == null) payload.direction = "";
+  if (payload.search == null) payload.search = getSearchValue();
+  if (payload.scrollTop == null) payload.scrollTop = getSettingsScrollTop();
+  if (payload.settingsTab == null) payload.settingsTab = currentSettingsTab();
+  window.webkit.messageHandlers.tapshop.postMessage(payload);
+}
+
+function setSettingsOpenState(open) {
+  document.body.setAttribute("data-settings-open", open ? "1" : "0");
+  var sheet = document.querySelector(".settings-sheet");
+  var list = document.querySelector(".workspace-list");
+  if (sheet) sheet.classList.toggle("is-open", open);
+  if (list) list.classList.toggle("is-dimmed", open);
+}
+
+function setSettingsTabState(tab) {
+  document.body.setAttribute("data-settings-tab", tab);
+}
+
+function restoreSettingsScrollState() {
+  var el = getSettingsScrollEl();
+  if (!el) return;
+  var value = parseFloat(document.body.getAttribute("data-settings-scroll-top") || "0") || 0;
+  el.scrollTop = Math.max(0, value);
+}
+
+function clearValidationUi() {
+  document.querySelectorAll(".hotkey-row.has-live-conflict").forEach(function (row) {
+    row.classList.remove("has-live-conflict");
+  });
+  var validation = document.querySelector("[data-hotkey-validation]");
+  if (validation) {
+    validation.textContent = "";
+    validation.classList.add("is-hidden");
+  }
+  var modalError = document.querySelector("[data-remap-error]");
+  if (modalError) {
+    modalError.textContent = "";
+    modalError.classList.add("is-hidden");
+  }
+}
+
+function showValidationUi(result) {
+  clearValidationUi();
+  if (!result || !result.message) return;
+
+  var validation = document.querySelector("[data-hotkey-validation]");
+  if (validation) {
+    validation.textContent = result.message;
+    validation.classList.remove("is-hidden");
+  }
+
+  if (result.ids) {
+    Object.keys(result.ids).forEach(function (id) {
+      var row = document.querySelector('[data-hotkey-row][data-id="' + id + '"]');
+      if (row) row.classList.add("has-live-conflict");
+    });
+  }
+
+  if (remapState.open && remapState.errorEl) {
+    remapState.errorEl.textContent = result.message;
+    remapState.errorEl.classList.remove("is-hidden");
+  }
+}
+
+window.tapshopApplyValidation = function (result) {
+  showValidationUi(result || null);
+};
+
+function toggleSettings() {
+  var nextOpen = !settingsOpen();
+  if (nextOpen) {
+    setSettingsOpenState(true);
+    clearValidationUi();
+  } else {
+    closeSettings();
+    return;
+  }
+  sendAction("toggleSettings");
+}
+
+function closeSettings() {
+  cancelRemapModal();
+  clearValidationUi();
+  var input = getSearchInput();
+  if (input) input.value = "";
+  filterHotkeyRows("");
+  setSettingsOpenState(false);
+  sendAction("closeSettings", { search: "" });
+}
+
+function switchSettingsTab(tab) {
+  cancelRemapModal();
+  clearValidationUi();
+  setSettingsTabState(tab);
+  sendAction("setSettingsTab", { settingsTab: tab });
+}
+
+function resetBinding(id) {
+  cancelRemapModal();
+  clearValidationUi();
+  sendAction("resetHotkeyBinding", { id: id });
+}
+
+function resetAllHotkeys() {
+  cancelRemapModal();
+  if (!window.confirm("Restore all hotkeys to defaults?")) return;
+  clearValidationUi();
+  sendAction("resetAllHotkeys");
+}
+
+function normalizeKey(e) {
+  var key = e.key;
+  var map = {
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    ArrowUp: "up",
+    ArrowDown: "down",
+    Escape: "escape",
+    Enter: "return",
+    Backspace: "delete",
+    Delete: "forwarddelete",
+    " ": "space",
+    Tab: "tab"
+  };
+  if (/^F\d+$/.test(key)) return key;
+  return map[key] || key.toLowerCase();
+}
+
+function displayKey(key) {
+  return KEY_LABELS[key] || String(key || "").toUpperCase();
+}
+
+function comboHtml(mods, key) {
+  if (key === false || key == null || key === "") {
+    return "";
+  }
+  var parts = [];
+  (mods || []).forEach(function (mod) {
+    parts.push('<span class="keycap">' + (MOD_SYMBOLS[mod] || mod) + '</span>');
+  });
+  parts.push('<span class="keycap">' + displayKey(key) + "</span>");
+  return parts.join("");
+}
+
+function filterHotkeyRows(value) {
+  var query = (value || "").toLowerCase().trim();
+  var rows = document.querySelectorAll("[data-hotkey-row]");
+  rows.forEach(function (row) {
+    var label = row.getAttribute("data-label") || "";
+    var group = row.getAttribute("data-group") || "";
+    var combo = row.getAttribute("data-combo") || "";
+    var match = !query || label.indexOf(query) !== -1 || group.indexOf(query) !== -1 || combo.indexOf(query) !== -1;
+    row.classList.toggle("is-hidden", !match);
+  });
+
+  document.querySelectorAll("[data-hotkey-group]").forEach(function (group) {
+    var visible = group.querySelector("[data-hotkey-row]:not(.is-hidden)");
+    group.classList.toggle("is-hidden", !visible);
+  });
+}
+
+function handleSearchInput(value) {
+  filterHotkeyRows(value);
+}
+
+var remapState = {
+  open: false,
+  targetId: null,
+  targetLabel: "",
+  currentMods: [],
+  currentKey: null,
+  draftMods: [],
+  draftKey: null,
+  cleared: false,
+  shellEl: null,
+  labelEl: null,
+  currentEl: null,
+  draftEl: null,
+  errorEl: null,
+  saveEl: null
+};
+
+function syncRemapActionState() {
+  if (!remapState.saveEl) return;
+  var canSave = remapState.cleared || remapState.draftKey;
+  remapState.saveEl.disabled = !canSave;
+}
+
+function renderRemapPreview() {
+  if (!remapState.currentEl || !remapState.draftEl) return;
+  remapState.currentEl.innerHTML = comboHtml(remapState.currentMods, remapState.currentKey);
+  remapState.currentEl.classList.toggle("is-empty", !remapState.currentKey);
+
+  var draftKey = remapState.cleared ? false : remapState.draftKey;
+  var draftMods = remapState.cleared ? [] : remapState.draftMods;
+  remapState.draftEl.innerHTML = comboHtml(draftMods, draftKey);
+  remapState.draftEl.classList.toggle("is-empty", !(remapState.cleared || remapState.draftKey));
+  syncRemapActionState();
+}
+
+function openRemapModal(id) {
+  var row = document.querySelector('[data-hotkey-row][data-id="' + id + '"]');
+  if (!row || !remapState.shellEl) return;
+
+  clearValidationUi();
+  remapState.open = true;
+  remapState.targetId = id;
+  remapState.targetLabel = row.getAttribute("data-label") || "";
+  remapState.currentKey = row.getAttribute("data-assigned") === "1" ? row.getAttribute("data-key") : false;
+  remapState.currentMods = (row.getAttribute("data-mods") || "").split(" ").filter(Boolean);
+  remapState.draftMods = [];
+  remapState.draftKey = null;
+  remapState.cleared = false;
+
+  remapState.labelEl.textContent = row.querySelector(".hotkey-label").textContent;
+  remapState.errorEl.textContent = "";
+  remapState.errorEl.classList.add("is-hidden");
+  remapState.shellEl.hidden = false;
+  renderRemapPreview();
+}
+
+function cancelRemapModal() {
+  if (!remapState.open) return;
+  remapState.open = false;
+  remapState.targetId = null;
+  remapState.draftMods = [];
+  remapState.draftKey = null;
+  remapState.cleared = false;
+  if (remapState.errorEl) {
+    remapState.errorEl.textContent = "";
+    remapState.errorEl.classList.add("is-hidden");
+  }
+  if (remapState.shellEl) remapState.shellEl.hidden = true;
+}
+
+function clearRemapBinding() {
+  remapState.cleared = true;
+  remapState.draftMods = [];
+  remapState.draftKey = false;
+  if (remapState.errorEl) {
+    remapState.errorEl.textContent = "";
+    remapState.errorEl.classList.add("is-hidden");
+  }
+  renderRemapPreview();
+}
+
+function saveRemapModal() {
+  if (!remapState.open || !remapState.targetId) return;
+  clearValidationUi();
+  if (remapState.cleared) {
+    sendAction("updateHotkeyBinding", {
+      id: remapState.targetId,
+      mods: [],
+      key: false
+    });
+    return;
+  }
+  if (!remapState.draftKey) return;
+  sendAction("updateHotkeyBinding", {
+    id: remapState.targetId,
+    mods: remapState.draftMods,
+    key: remapState.draftKey
   });
 }
 
@@ -30,21 +338,42 @@ function measureContentHeightAtScale(scale) {
   var container = document.querySelector(".container");
   var header = document.querySelector(".header");
   var workspaceList = document.querySelector(".workspace-list");
-  if (!container || !header || !workspaceList) return 0;
+  var settingsSheet = document.querySelector(".settings-sheet");
+  var settingsHead = document.querySelector(".settings-head");
+  var settingsScroll = document.querySelector(".settings-scroll");
+  var activePanel = document.querySelector('.settings-panel[data-settings-panel="' + currentSettingsTab() + '"]');
+  if (!container || !header) return 0;
 
   setUiScale(scale);
   void container.offsetHeight;
 
   var containerStyle = window.getComputedStyle(container);
-  var gap = readPx(containerStyle.rowGap || containerStyle.gap);
-
-  return header.getBoundingClientRect().height
-    + workspaceList.getBoundingClientRect().height
-    + gap
-    + readPx(containerStyle.paddingTop)
+  var containerGap = readPx(containerStyle.rowGap || containerStyle.gap);
+  var total = readPx(containerStyle.paddingTop)
     + readPx(containerStyle.paddingBottom)
     + readPx(containerStyle.borderTopWidth)
-    + readPx(containerStyle.borderBottomWidth);
+    + readPx(containerStyle.borderBottomWidth)
+    + header.getBoundingClientRect().height
+    + containerGap;
+
+  if (settingsOpen() && settingsSheet && settingsHead && settingsScroll && activePanel) {
+    var sheetStyle = window.getComputedStyle(settingsSheet);
+    var scrollStyle = window.getComputedStyle(settingsScroll);
+    total = total
+      + readPx(sheetStyle.paddingTop)
+      + readPx(sheetStyle.paddingBottom)
+      + readPx(sheetStyle.borderTopWidth)
+      + readPx(sheetStyle.borderBottomWidth)
+      + readPx(sheetStyle.rowGap || sheetStyle.gap)
+      + settingsHead.getBoundingClientRect().height
+      + readPx(scrollStyle.paddingTop)
+      + readPx(scrollStyle.paddingBottom)
+      + Math.min(activePanel.scrollHeight, settingsScroll.getBoundingClientRect().height || activePanel.scrollHeight);
+    return total;
+  }
+
+  if (!workspaceList) return total;
+  return total + workspaceList.getBoundingClientRect().height;
 }
 
 function updateUiScale() {
@@ -99,19 +428,13 @@ function setGlobalCursor(cursor) {
 }
 
 var container = document.querySelector(".container");
+var header = document.querySelector(".header");
 var headerActions = document.querySelector(".header-actions");
 var headerTooltip = document.querySelector(".header-tooltip");
 var titleTrigger = document.querySelector(".title-trigger");
 var titleHop = document.querySelector(".title-hop");
 var tooltipTarget = null;
 var titleTapTimestamps = [];
-
-function triggerTitleHop() {
-  if (!titleHop) return;
-  titleHop.classList.remove("is-hopping");
-  void titleHop.offsetWidth;
-  titleHop.classList.add("is-hopping");
-}
 
 function hideHeaderTooltip() {
   tooltipTarget = null;
@@ -120,13 +443,13 @@ function hideHeaderTooltip() {
   headerTooltip.textContent = "";
 }
 
+function readPx(value) {
+  return parseFloat(value || "0") || 0;
+}
+
 function showHeaderTooltip(el) {
   if (!container || !headerActions || !headerTooltip || !el) return;
   if (dragState.active || resizeState.active) return;
-  if (configMenu && configMenu.hasAttribute("open") && el.closest(".config-menu")) {
-    hideHeaderTooltip();
-    return;
-  }
 
   var tooltipText = el.getAttribute("data-tooltip") || "";
   if (!tooltipText) {
@@ -149,25 +472,31 @@ function showHeaderTooltip(el) {
   var maxLeft = containerRect.width - tooltipRect.width - paddingRight - 6;
   var centeredLeft = (buttonRect.left - containerRect.left) + (buttonRect.width / 2) - (tooltipRect.width / 2);
   var left = Math.max(minLeft, Math.min(centeredLeft, maxLeft));
-  var topBase = headerRect
-    ? ((headerRect.bottom - containerRect.top) + 4)
-    : (readPx(style.paddingTop) + 28);
+  var topBase = headerRect ? ((headerRect.bottom - containerRect.top) + 4) : 30;
 
   headerTooltip.style.left = left + "px";
   headerTooltip.style.top = topBase + "px";
 }
 
+function triggerTitleHop() {
+  if (!titleHop) return;
+  titleHop.classList.remove("is-hopping");
+  void titleHop.offsetWidth;
+  titleHop.classList.add("is-hopping");
+}
+
 var dragState = {
   active: false,
+  moved: false,
   lastX: 0,
-  lastY: 0,
+  lastY: 0
 };
 
 var resizeState = {
   active: false,
   lastX: 0,
   lastY: 0,
-  direction: "",
+  direction: ""
 };
 
 document.addEventListener("mousedown", function (e) {
@@ -180,21 +509,21 @@ document.addEventListener("mousedown", function (e) {
   resizeState.lastY = e.screenY;
   setGlobalCursor(cursorForDirection(direction));
   hideHeaderTooltip();
-  sendAction("resizeStart", 0, 0, 0, 0, 0, direction);
+  sendAction("resizeStart", { direction: direction });
   e.preventDefault();
   e.stopPropagation();
 }, true);
 
-var header = document.querySelector(".header");
 if (header) {
   header.addEventListener("mousedown", function (e) {
     if (e.button !== 0) return;
     if (
       e.target
       && e.target.closest
-      && e.target.closest(".config-menu, .header-actions, .title-trigger, button, input, label, summary")
+      && e.target.closest(".header-actions, .title-trigger, button, input, label")
     ) return;
     dragState.active = true;
+    dragState.moved = false;
     dragState.lastX = e.screenX;
     dragState.lastY = e.screenY;
     hideHeaderTooltip();
@@ -204,43 +533,45 @@ if (header) {
 }
 
 window.addEventListener("mousemove", function (e) {
-  if (!dragState.active) return;
+  if (dragState.active) {
+    var dx = e.screenX - dragState.lastX;
+    var dy = e.screenY - dragState.lastY;
+    dragState.lastX = e.screenX;
+    dragState.lastY = e.screenY;
+    if (dx !== 0 || dy !== 0) {
+      dragState.moved = true;
+      sendAction("dragMove", { dx: dx, dy: dy });
+    }
+  }
 
-  var dx = e.screenX - dragState.lastX;
-  var dy = e.screenY - dragState.lastY;
-  dragState.lastX = e.screenX;
-  dragState.lastY = e.screenY;
-
-  if (dx !== 0 || dy !== 0) {
-    sendAction("dragMove", 0, dx, dy);
+  if (resizeState.active) {
+    var dw = e.screenX - resizeState.lastX;
+    var dh = e.screenY - resizeState.lastY;
+    resizeState.lastX = e.screenX;
+    resizeState.lastY = e.screenY;
+    if (dw !== 0 || dh !== 0) {
+      sendAction("resizeMove", { dw: dw, dh: dh, direction: resizeState.direction });
+    }
   }
 });
 
 window.addEventListener("mouseup", function () {
-  if (!dragState.active) return;
-  dragState.active = false;
-  sendAction("dragEnd");
-});
-
-window.addEventListener("mousemove", function (e) {
-  if (!resizeState.active) return;
-
-  var dw = e.screenX - resizeState.lastX;
-  var dh = e.screenY - resizeState.lastY;
-  resizeState.lastX = e.screenX;
-  resizeState.lastY = e.screenY;
-
-  if (dw !== 0 || dh !== 0) {
-    sendAction("resizeMove", 0, 0, 0, dw, dh, resizeState.direction);
+  if (dragState.active) {
+    var shouldCloseSettings = settingsOpen() && !dragState.moved;
+    dragState.active = false;
+    sendAction("dragEnd");
+    if (shouldCloseSettings) {
+      closeSettings();
+      return;
+    }
   }
-});
 
-window.addEventListener("mouseup", function () {
-  if (!resizeState.active) return;
-  resizeState.active = false;
-  resizeState.direction = "";
-  setGlobalCursor("");
-  sendAction("resizeEnd");
+  if (resizeState.active) {
+    resizeState.active = false;
+    resizeState.direction = "";
+    setGlobalCursor("");
+    sendAction("resizeEnd");
+  }
 });
 
 document.addEventListener("mousemove", function (e) {
@@ -253,23 +584,53 @@ document.addEventListener("mouseleave", function () {
   setGlobalCursor("");
 });
 
-window.addEventListener("resize", updateUiScale);
-updateUiScale();
-
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape") sendAction("close");
+  if (remapState.open) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    var modifierKeys = { Meta: true, Alt: true, Control: true, Shift: true };
+    if (modifierKeys[e.key]) return;
+
+    var mods = [];
+    if (e.metaKey) mods.push("cmd");
+    if (e.altKey) mods.push("alt");
+    if (e.ctrlKey) mods.push("ctrl");
+    if (e.shiftKey) mods.push("shift");
+
+    var key = normalizeKey(e);
+    if (key === "escape" && mods.length === 0) {
+      cancelRemapModal();
+      return;
+    }
+
+    remapState.cleared = false;
+    remapState.draftMods = mods;
+    remapState.draftKey = key;
+    if (remapState.errorEl) {
+      remapState.errorEl.textContent = "";
+      remapState.errorEl.classList.add("is-hidden");
+    }
+    renderRemapPreview();
+    return;
+  }
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    if (settingsOpen()) {
+      closeSettings();
+    } else {
+      sendAction("close");
+    }
+  }
 });
 
-var configMenu = document.querySelector(".config-menu");
-var tooltipControls = document.querySelectorAll("[data-tooltip]");
 document.addEventListener("mousedown", function (e) {
   hideHeaderTooltip();
-  if (!configMenu || !configMenu.hasAttribute("open")) return;
-  if (e.target && e.target.closest && e.target.closest(".config-menu")) return;
-  configMenu.removeAttribute("open");
 });
 
-tooltipControls.forEach(function (el) {
+document.querySelectorAll("[data-tooltip]").forEach(function (el) {
   el.addEventListener("mouseenter", function () {
     showHeaderTooltip(el);
   });
@@ -282,30 +643,19 @@ tooltipControls.forEach(function (el) {
   el.addEventListener("focusout", function () {
     if (tooltipTarget === el) hideHeaderTooltip();
   });
-  el.addEventListener("mousedown", function () {
-    hideHeaderTooltip();
-  });
 });
-
-if (configMenu) {
-  configMenu.addEventListener("toggle", function () {
-    hideHeaderTooltip();
-  });
-}
 
 if (titleTrigger) {
   titleTrigger.addEventListener("mousedown", function (e) {
     if (e.button !== 0) return;
     e.stopPropagation();
   });
-
   titleTrigger.addEventListener("click", function () {
     var now = Date.now();
     titleTapTimestamps.push(now);
     titleTapTimestamps = titleTapTimestamps.filter(function (ts) {
       return now - ts <= TITLE_TAP_WINDOW_MS;
     });
-
     if (titleTapTimestamps.length >= 3) {
       titleTapTimestamps = [];
       triggerTitleHop();
@@ -318,6 +668,20 @@ if (titleHop) {
     titleHop.classList.remove("is-hopping");
   });
 }
+
+window.addEventListener("resize", updateUiScale);
+updateUiScale();
+filterHotkeyRows(getSearchValue());
+setSettingsOpenState(settingsOpen());
+setSettingsTabState(currentSettingsTab());
+restoreSettingsScrollState();
+
+remapState.shellEl = document.querySelector("[data-remap-shell]");
+remapState.labelEl = document.querySelector("[data-remap-label]");
+remapState.currentEl = document.querySelector("[data-remap-current]");
+remapState.draftEl = document.querySelector("[data-remap-draft]");
+remapState.errorEl = document.querySelector("[data-remap-error]");
+remapState.saveEl = document.querySelector("[data-remap-save]");
 ]=]
 
 return ClientScript

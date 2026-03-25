@@ -12,7 +12,6 @@ function Popover.new(app, cfg, deps)
   local windowService = deps.windowService
   local settingsStore = deps.settingsStore
 
-  local escTap = nil
   local panel = nil
   local callerWin = nil
   local activeWin = nil
@@ -21,15 +20,45 @@ function Popover.new(app, cfg, deps)
   local refreshTimer = nil
   local isDragging = false
   local isResizing = false
+  local settingsState = {
+    open = false,
+    tab = "general",
+    search = "",
+    scrollTop = 0,
+    validation = nil,
+  }
   local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
   local savedSize = settingsStore.getSize(configModule.keys.popoverSize)
 
   local POP_W = 500
-  local POP_H = 272
+  local POP_H = 280
   local POP_MIN_W = 320
-  local POP_MIN_H = 260
+  local POP_MIN_H = 280
   local POP_MAX_H = 408
   local POP_SCREEN_MARGIN = 32
+
+  local function normalizeSettingsTab(value)
+    if value == "hotkeys" then
+      return "hotkeys"
+    end
+    return "general"
+  end
+
+  local function syncUiStateFromBody(body)
+    if type(body) ~= "table" then
+      return
+    end
+    if type(body.search) == "string" then
+      settingsState.search = body.search
+    end
+    if type(body.settingsTab) == "string" then
+      settingsState.tab = normalizeSettingsTab(body.settingsTab)
+    end
+    local scrollTop = tonumber(body.scrollTop)
+    if scrollTop then
+      settingsState.scrollTop = math.max(0, math.floor(scrollTop))
+    end
+  end
 
   local function pickScreen()
     return hs.mouse.getCurrentScreen()
@@ -50,7 +79,7 @@ function Popover.new(app, cfg, deps)
   local function currentPopoverSize(screen)
     return {
       w = math.max(POP_MIN_W, savedSize and savedSize.w or POP_W),
-      h = clampPopoverHeight(POP_H, screen),
+      h = clampPopoverHeight((savedSize and savedSize.h) or POP_H, screen),
     }
   end
 
@@ -85,9 +114,17 @@ function Popover.new(app, cfg, deps)
     local frame = panel:getWebview():frame()
     savedSize = {
       w = math.max(POP_MIN_W, math.floor(frame.w)),
-      h = POP_H,
+      h = clampPopoverHeight(math.floor(frame.h)),
     }
     settingsStore.setSize(configModule.keys.popoverSize, savedSize)
+  end
+
+  local function pushValidationState(panelRef, result)
+    if not panelRef:isShown() then
+      return
+    end
+    local payload = hs.json.encode(result or { message = "" }) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplyValidation(" .. payload .. ")")
   end
 
   local function currentHeaderLines()
@@ -169,6 +206,7 @@ function Popover.new(app, cfg, deps)
     local theme = popoverTheme.buildTheme(cfg)
     local primaryLine, secondaryLine = currentHeaderLines()
     local css = popoverStyles.buildCss(theme)
+    local hotkeyState = app:getHotkeyUiState()
 
     if cfg.popoverDebugWindow then
       css = css .. "\n" .. debugStyles.css
@@ -186,6 +224,16 @@ function Popover.new(app, cfg, deps)
         debugWindow = cfg.popoverDebugWindow == true,
         opacityPercent = theme.opacityPercent,
       },
+      settings = {
+        open = settingsState.open == true,
+        tab = settingsState.tab,
+        search = settingsState.search,
+        scrollTop = settingsState.scrollTop or 0,
+        validation = settingsState.validation,
+      },
+      hotkeys = hotkeyState.rows or {},
+      hotkeyConflicts = hotkeyState.conflictsById or {},
+      hotkeyOverrides = hotkeyState.overrides or {},
       rows = buildRowsViewModel(),
     }
   end
@@ -240,6 +288,7 @@ function Popover.new(app, cfg, deps)
     handleAction = function(panelRef, msg)
       local body = msg.body or {}
       local action = body.action
+      syncUiStateFromBody(body)
       if action == "dragStart" then
         isDragging = true
         return
@@ -312,10 +361,47 @@ function Popover.new(app, cfg, deps)
         panelRef:hide()
         return
       end
+      if action == "toggleSettings" then
+        settingsState.open = not settingsState.open
+        settingsState.validation = nil
+        if settingsState.open then
+          settingsState.tab = normalizeSettingsTab(body.settingsTab)
+        else
+          settingsState.search = ""
+          settingsState.scrollTop = 0
+        end
+        return
+      end
+      if action == "closeSettings" then
+        settingsState.open = false
+        settingsState.search = ""
+        settingsState.scrollTop = 0
+        settingsState.validation = nil
+        return
+      end
+      if action == "setSettingsTab" then
+        settingsState.open = true
+        settingsState.validation = nil
+        settingsState.tab = normalizeSettingsTab(body.settingsTab)
+        return
+      end
+      if action == "setHotkeySearch" then
+        return
+      end
       if action == "pair" then
         body.sourceWindow = activeWin or callerWin
       end
-      app:handlePopoverAction(body)
+      local result = app:handlePopoverAction(body)
+      if action == "updateHotkeyBinding" or action == "resetHotkeyBinding" or action == "resetAllHotkeys" then
+        if result and result.ok then
+          settingsState.validation = nil
+          panelRef:refresh()
+        else
+          settingsState.validation = result
+          pushValidationState(panelRef, result)
+        end
+        return
+      end
       if action == "setAlwaysOnTop" then
         panelRef:setLevel(currentPopoverLevel())
       end
@@ -337,24 +423,13 @@ function Popover.new(app, cfg, deps)
       end
       view:level(currentPopoverLevel())
     end,
-    afterShow = function(panelRef)
-      if not escTap then
-        escTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(evt)
-          if evt:getKeyCode() == hs.keycodes.map.escape and panelRef:isShown() then
-            panelRef:hide()
-            return true
-          end
-          return false
-        end)
-      end
-      escTap:start()
-    end,
     beforeHide = function()
       isDragging = false
       isResizing = false
-      if escTap then
-        escTap:stop()
-      end
+      settingsState.open = false
+      settingsState.search = ""
+      settingsState.scrollTop = 0
+      settingsState.validation = nil
     end,
   })
 
