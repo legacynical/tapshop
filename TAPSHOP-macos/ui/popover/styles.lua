@@ -626,7 +626,8 @@ body[data-settings-tab="hotkeys"] .settings-panel[data-settings-panel="hotkeys"]
   align-items: center;
   gap: calc(3px * var(--ui-scale));
   flex-wrap: wrap;
-  min-width: calc(102px * var(--ui-scale));
+  width: fit-content;
+  max-width: 100%;
   min-height: calc(24px * var(--ui-scale));
   padding: calc(3px * var(--ui-scale));
   border: 1px solid var(--line);
@@ -636,7 +637,19 @@ body[data-settings-tab="hotkeys"] .settings-panel[data-settings-panel="hotkeys"]
 
 .hotkey-combo-empty,
 .remap-preview-combo.is-empty {
-  background: rgba(255, 255, 255, 0.02);
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+}
+
+.hotkey-unset {
+  color: var(--text-muted);
+  font-size: calc(10px * var(--ui-scale));
+  line-height: 1.2;
+  font-style: italic;
 }
 
 .keycap {

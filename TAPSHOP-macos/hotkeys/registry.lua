@@ -11,7 +11,7 @@ function Registry.bindings()
     addBinding(bindings, {
       id = "slots.activate." .. tostring(i),
       group = "Window Slots",
-      label = "Activate Slot " .. tostring(i),
+      label = "Pair/Toggle Slot " .. tostring(i),
       mods = { "cmd", "alt" },
       key = tostring(i),
       action = "activateSlot",
