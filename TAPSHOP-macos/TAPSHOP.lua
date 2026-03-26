@@ -24,6 +24,7 @@ local HotkeyManager = require("hotkeys.manager")
 local windowService = require("services.window_service")
 local YoutubeService = require("services.youtube_service")
 local SpotifyService = require("services.spotify_service")
+local SystemAudioService = require("services.system_audio_service")
 local Toast = require("ui.toast")
 local Popover = require("ui.popover")
 local DebugWindow = require("ui.debug_window")
@@ -32,12 +33,14 @@ local cfg = Config.load()
 local toast = Toast.new(cfg)
 local youtubeService = YoutubeService.new(cfg, windowService, toast)
 local spotifyService = SpotifyService.new()
+local systemAudioService = SystemAudioService.new()
 
 local app = AppState.new(cfg, {
   settingsStore = settingsStore,
   windowService = windowService,
   youtubeService = youtubeService,
   spotifyService = spotifyService,
+  systemAudioService = systemAudioService,
   toast = toast,
 })
 
@@ -65,6 +68,8 @@ windowFilter:subscribe({
   hs.window.filter.windowVisible,
   hs.window.filter.windowMinimized,
   hs.window.filter.windowUnminimized,
+  hs.window.filter.windowFullscreened,
+  hs.window.filter.windowUnfullscreened,
 }, function(win, _, event)
   pcall(function()
     app:handleWindowEvent(event, win)
