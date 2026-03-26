@@ -1,5 +1,6 @@
 local Conflicts = require("hotkeys.conflicts")
 local Registry = require("hotkeys.registry")
+local Utils = require("utils")
 
 local HotkeyManager = {}
 HotkeyManager.__index = HotkeyManager
@@ -74,19 +75,6 @@ local function bindHotkeySafe(mods, key, fn)
   end
   hs.printf("[tapshop-hotkeys] failed to bind %s: %s", tostring(key), tostring(bindingOrErr))
   return nil
-end
-
-local function normalizeIncomingKey(value)
-  if value == false then
-    return false
-  end
-  if type(value) ~= "string" or value == "" then
-    return nil
-  end
-  if value:match("^F%d+$") then
-    return value
-  end
-  return string.lower(value)
 end
 
 local function isBindingAssigned(binding)
@@ -322,10 +310,6 @@ function HotkeyManager:getUiState()
   return self.uiStateCache
 end
 
-function HotkeyManager:getUiStateCached()
-  return self:getUiState()
-end
-
 function HotkeyManager:getHotkeyHtmlCached(rendererFn)
   if type(rendererFn) ~= "function" then
     return self.htmlCache
@@ -428,7 +412,7 @@ function HotkeyManager:updateBinding(id, payload)
     candidate.mods = Conflicts.normalizeMods(payload.mods)
   end
   if payload.key ~= nil then
-    local normalizedKey = normalizeIncomingKey(payload.key)
+    local normalizedKey = Utils.normalizeKey(payload.key)
     if normalizedKey == nil then
       return {
         ok = false,

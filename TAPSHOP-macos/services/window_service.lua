@@ -1,5 +1,10 @@
+local Utils = require("utils")
+
 local WindowService = {}
 local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
+
+local elapsedMs = Utils.elapsedMs
+local debugLog = Utils.debugLog
 
 local function normalizeWindowTitle(title)
   local normalized = tostring(title or ""):lower()
@@ -14,16 +19,6 @@ local function focusResult(ok, code, win)
     code = code,
     windowId = win and win:id() or nil,
   }
-end
-
-local function elapsedMs(startedAt)
-  return (hs.timer.absoluteTime() - startedAt) / 1e6
-end
-
-local function debugLog(cfg, fmt, ...)
-  if cfg and cfg.isGuiDebugMode then
-    hs.printf("[tapshop-perf] " .. fmt, ...)
-  end
 end
 
 local function isFrontmost(win)
@@ -175,6 +170,157 @@ function WindowService.focusOrRestore(win, cfg)
     elapsedMs(startedAt)
   )
   return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
+end
+
+function WindowService.currentSpaceId()
+  local screen = hs.screen.mainScreen()
+  return hs.spaces.activeSpaceOnScreen(screen)
+end
+
+function WindowService.waitForSpace(spaceId, cfg)
+  if not spaceId then
+    return false
+  end
+  local timeoutSec = (cfg and cfg.spaceSwitchWaitTimeout) or 0.35
+  local pollMicros = (cfg and cfg.spaceSwitchPollMicros) or 10000
+  local start = hs.timer.secondsSinceEpoch()
+  while (hs.timer.secondsSinceEpoch() - start) < timeoutSec do
+    if WindowService.currentSpaceId() == spaceId then
+      return true
+    end
+    hs.timer.usleep(pollMicros)
+  end
+  return WindowService.currentSpaceId() == spaceId
+end
+
+function WindowService.getWindowSpaces(win)
+  if not win then
+    return {}
+  end
+  return hs.spaces.windowSpaces(win) or {}
+end
+
+function WindowService.getSpaceType(spaceId)
+  if not spaceId then
+    return nil
+  end
+  return hs.spaces.spaceType(spaceId)
+end
+
+function WindowService.isFullscreenSpace(spaceId)
+  return WindowService.getSpaceType(spaceId) == "fullscreen"
+end
+
+function WindowService.isWindowFullscreen(win)
+  return win ~= nil and win:isFullScreen()
+end
+
+function WindowService.getPrimarySpaceForWindow(win)
+  local spaceIds = WindowService.getWindowSpaces(win)
+  for _, spaceId in ipairs(spaceIds) do
+    if WindowService.isFullscreenSpace(spaceId) then
+      return spaceId
+    end
+  end
+  return spaceIds[1]
+end
+
+function WindowService.windowIsInSpace(win, spaceId)
+  if not win or not spaceId then
+    return false
+  end
+  for _, candidate in ipairs(WindowService.getWindowSpaces(win)) do
+    if candidate == spaceId then
+      return true
+    end
+  end
+  return false
+end
+
+function WindowService.windowStillExists(win)
+  return win ~= nil and hs.window.get(win:id()) ~= nil
+end
+
+function WindowService.frontmostWindowInCurrentSpace()
+  local frontmost = hs.window.frontmostWindow()
+  if not frontmost then
+    return nil
+  end
+  local activeSpaceId = WindowService.currentSpaceId()
+  if not activeSpaceId then
+    return nil
+  end
+  if WindowService.windowIsInSpace(frontmost, activeSpaceId) then
+    return frontmost
+  end
+  return nil
+end
+
+function WindowService.bestEffortFrontmostWindowInSpace(spaceId)
+  if not spaceId then
+    return nil
+  end
+  if WindowService.currentSpaceId() ~= spaceId then
+    return nil
+  end
+
+  local frontmost = WindowService.frontmostWindowInCurrentSpace()
+  if frontmost and WindowService.isWindowFullscreen(frontmost) then
+    return frontmost
+  end
+  return nil
+end
+
+function WindowService.gotoSpace(spaceId, cfg)
+  local startedAt = hs.timer.absoluteTime()
+  if not spaceId then
+    debugLog(cfg, "gotoSpace result=missing-space-id durationMs=%.2f", elapsedMs(startedAt))
+    return { ok = false, code = "missing_space_id", spaceId = nil }
+  end
+  hs.spaces.gotoSpace(spaceId)
+  if not WindowService.waitForSpace(spaceId, cfg) then
+    debugLog(
+      cfg,
+      "gotoSpace result=space-switch-timeout requestedSpaceId=%s activeSpaceId=%s durationMs=%.2f",
+      tostring(spaceId),
+      tostring(WindowService.currentSpaceId()),
+      elapsedMs(startedAt)
+    )
+    return { ok = false, code = "space_switch_timeout", spaceId = spaceId }
+  end
+  debugLog(cfg, "gotoSpace result=space-switch-verified spaceId=%s durationMs=%.2f", tostring(spaceId), elapsedMs(startedAt))
+  return { ok = true, code = "space_switch_verified", spaceId = spaceId }
+end
+
+function WindowService.focusWindowAfterSpaceSwitch(win, cfg)
+  local startedAt = hs.timer.absoluteTime()
+  if not win then
+    debugLog(cfg, "focusAfterSpaceSwitch result=missing-window durationMs=%.2f", elapsedMs(startedAt))
+    return focusResult(false, "missing_window", nil)
+  end
+
+  local initialDelay = cfg.fullscreenSpaceSwitchDelay or 0.20
+  local retries = cfg.fullscreenPostSwitchFocusRetries or { 0.02, 0.06 }
+
+  hs.timer.doAfter(initialDelay, function()
+    pcall(function()
+      requestFocus(win)
+    end)
+  end)
+
+  for _, retryOffset in ipairs(retries) do
+    hs.timer.doAfter(initialDelay + retryOffset, function()
+      pcall(function()
+        if not win or isFrontmost(win) then
+          return
+        end
+        requestFocus(win)
+      end)
+    end)
+  end
+
+  debugLog(cfg, "focusAfterSpaceSwitch result=focus-scheduled windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
+  return focusResult(true, "focus_scheduled_after_space_switch", win)
 end
 
 function WindowService.focusOrRestoreFast(win, cfg)

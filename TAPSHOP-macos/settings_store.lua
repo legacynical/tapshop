@@ -1,3 +1,5 @@
+local Utils = require("utils")
+
 local SettingsStore = {}
 
 local VALID_MODS = {
@@ -28,20 +30,6 @@ local function normalizePositiveInteger(value)
   return normalized
 end
 
-local function normalizeOptionalString(value)
-  if type(value) ~= "string" then
-    return nil
-  end
-  return value
-end
-
-local function normalizeOptionalNumber(value)
-  if type(value) ~= "number" then
-    return nil
-  end
-  return value
-end
-
 local function normalizeHotkeyMods(value)
   if type(value) ~= "table" then
     return nil
@@ -64,17 +52,29 @@ local function normalizeHotkeyMods(value)
   return out
 end
 
-local function normalizeHotkeyKey(value)
-  if value == false then
-    return false
-  end
-  if type(value) ~= "string" or value == "" then
+local function normalizeOverrideEntry(rawOverride)
+  if type(rawOverride) ~= "table" then
     return nil
   end
-  if value:match("^F%d+$") then
-    return value
+
+  local normalized = {}
+  local mods = normalizeHotkeyMods(rawOverride.mods)
+  local key = Utils.normalizeKey(rawOverride.key)
+
+  if mods ~= nil then
+    normalized.mods = mods
   end
-  return string.lower(value)
+  if key ~= nil then
+    normalized.key = key
+  end
+  if type(rawOverride.enabled) == "boolean" then
+    normalized.enabled = rawOverride.enabled
+  end
+
+  if next(normalized) == nil then
+    return nil
+  end
+  return normalized
 end
 
 function SettingsStore.getBoolean(key, defaultValue)
@@ -165,22 +165,9 @@ function SettingsStore.getHotkeyOverrides(key)
   end
 
   for id, rawOverride in pairs(value) do
-    if type(id) == "string" and type(rawOverride) == "table" then
-      local normalized = {}
-      local mods = normalizeHotkeyMods(rawOverride.mods)
-      local hotkey = normalizeHotkeyKey(rawOverride.key)
-
-      if mods ~= nil then
-        normalized.mods = mods
-      end
-      if hotkey ~= nil then
-        normalized.key = hotkey
-      end
-      if type(rawOverride.enabled) == "boolean" then
-        normalized.enabled = rawOverride.enabled
-      end
-
-      if next(normalized) ~= nil then
+    if type(id) == "string" then
+      local normalized = normalizeOverrideEntry(rawOverride)
+      if normalized then
         out[id] = normalized
       end
     end
@@ -193,22 +180,9 @@ function SettingsStore.setHotkeyOverrides(key, overrides)
   local payload = {}
   if type(overrides) == "table" then
     for id, rawOverride in pairs(overrides) do
-      if type(id) == "string" and type(rawOverride) == "table" then
-        local normalized = {}
-        local mods = normalizeHotkeyMods(rawOverride.mods)
-        local hotkey = normalizeHotkeyKey(rawOverride.key)
-
-        if mods ~= nil then
-          normalized.mods = mods
-        end
-        if hotkey ~= nil then
-          normalized.key = hotkey
-        end
-        if type(rawOverride.enabled) == "boolean" then
-          normalized.enabled = rawOverride.enabled
-        end
-
-        if next(normalized) ~= nil then
+      if type(id) == "string" then
+        local normalized = normalizeOverrideEntry(rawOverride)
+        if normalized then
           payload[id] = normalized
         end
       end
@@ -238,24 +212,9 @@ function SettingsStore.getWindowPairings(key)
           out[slot] = windowId
         end
       elseif type(rawPairing) == "table" then
-        local windowId = normalizePositiveInteger(rawPairing.windowId)
-        local bundleID = normalizeOptionalString(rawPairing.bundleID)
-        local appName = normalizeOptionalString(rawPairing.appName)
-        local titleRaw = normalizeOptionalString(rawPairing.titleRaw)
-        local titleNormalized = normalizeOptionalString(rawPairing.titleNormalized)
-        local displayTitle = normalizeOptionalString(rawPairing.displayTitle)
-        local closedAt = normalizeOptionalNumber(rawPairing.closedAt)
-
-        if windowId or bundleID or appName or titleRaw or titleNormalized or displayTitle or closedAt then
-          out[slot] = {
-            windowId = windowId,
-            bundleID = bundleID,
-            appName = appName,
-            titleRaw = titleRaw,
-            titleNormalized = titleNormalized,
-            displayTitle = displayTitle,
-            closedAt = closedAt,
-          }
+        local record = Utils.buildPairingRecord(rawPairing)
+        if record then
+          out[slot] = record
         end
       end
     end
@@ -270,24 +229,9 @@ function SettingsStore.setWindowPairings(key, pairings)
     for rawSlot, rawPairing in pairs(pairings) do
       local slot = normalizePositiveInteger(tonumber(rawSlot))
       if slot and slot >= 1 and slot <= 9 and type(rawPairing) == "table" then
-        local windowId = normalizePositiveInteger(rawPairing.windowId)
-        local bundleID = normalizeOptionalString(rawPairing.bundleID)
-        local appName = normalizeOptionalString(rawPairing.appName)
-        local titleRaw = normalizeOptionalString(rawPairing.titleRaw)
-        local titleNormalized = normalizeOptionalString(rawPairing.titleNormalized)
-        local displayTitle = normalizeOptionalString(rawPairing.displayTitle)
-        local closedAt = normalizeOptionalNumber(rawPairing.closedAt)
-
-        if windowId or bundleID or appName or titleRaw or titleNormalized or displayTitle or closedAt then
-          payload[tostring(slot)] = {
-            windowId = windowId,
-            bundleID = bundleID,
-            appName = appName,
-            titleRaw = titleRaw,
-            titleNormalized = titleNormalized,
-            displayTitle = displayTitle,
-            closedAt = closedAt,
-          }
+        local record = Utils.buildPairingRecord(rawPairing)
+        if record then
+          payload[tostring(slot)] = record
         end
       end
     end

@@ -572,10 +572,6 @@ function hideHeaderTooltip() {
   headerTooltip.textContent = "";
 }
 
-function readPx(value) {
-  return parseFloat(value || "0") || 0;
-}
-
 function showHeaderTooltip(el) {
   if (!container || !headerActions || !headerTooltip || !el) return;
   if (dragState.active || resizeState.active) return;

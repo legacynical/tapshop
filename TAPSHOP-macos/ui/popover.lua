@@ -166,57 +166,6 @@ function Popover.new(app, cfg, deps)
     return primaryLine, secondaryLine
   end
 
-  local function slotLabel(workspace, pairedWin)
-    if not workspace:isPaired() then
-      return "[empty]"
-    end
-
-    if pairedWin then
-      local info = windowService.getWindowInfo(pairedWin)
-      if info then
-        local appName = info.appName or ""
-        local rawTitle = info.title or ""
-        local title = rawTitle:match("%S") and rawTitle or "[untitled]"
-        if appName:match("%S") then
-          return string.format("[%s] %s", appName, title)
-        end
-      end
-    end
-
-    return workspace.displayTitle or "[empty]"
-  end
-
-  local function buildRowsViewModel()
-    local rows = {}
-
-    for index, workspace in ipairs(app:getWorkspaces()) do
-      local isPaired = workspace:isPaired()
-      local pairedWin = nil
-      local isMinimized = false
-      local className = "unpaired"
-
-      if isPaired then
-        pairedWin = windowService.getWindowById(workspace.id)
-        isMinimized = pairedWin and pairedWin:isMinimized() or false
-        if isMinimized then
-          className = "paired-minimized"
-        else
-          className = "paired"
-        end
-      end
-
-      rows[#rows + 1] = {
-        index = index,
-        label = slotLabel(workspace, pairedWin),
-        className = className,
-        isMinimized = isMinimized,
-        canUnpair = isPaired,
-      }
-    end
-
-    return rows
-  end
-
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
     local primaryLine, secondaryLine = currentHeaderLines()
@@ -265,7 +214,7 @@ function Popover.new(app, cfg, deps)
       hotkeysHtml = hotkeysHtml,
       hotkeyConflicts = hotkeyState.conflictsById or {},
       hotkeyOverrides = hotkeyState.overrides or {},
-      rows = buildRowsViewModel(),
+      rows = app:getWorkspaceRowModels(),
     }
   end
 

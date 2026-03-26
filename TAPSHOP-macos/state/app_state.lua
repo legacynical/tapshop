@@ -1,5 +1,6 @@
 local Workspace = require("state.workspace")
 local configModule = require("config")
+local Utils = require("utils")
 
 local AppState = {}
 AppState.__index = AppState
@@ -12,27 +13,11 @@ local DEBUG_STATE_KEYS = {
   "lastFocusResult",
   "lastPairingMutation",
   "lastYoutubeAction",
+  "lastActivationPath",
 }
 
-local function elapsedMs(startedAt)
-  return (hs.timer.absoluteTime() - startedAt) / 1e6
-end
-
-local function debugLog(cfg, fmt, ...)
-  if cfg and cfg.isGuiDebugMode then
-    hs.printf("[tapshop-perf] " .. fmt, ...)
-  end
-end
-
-local function clampOpacityPercent(value)
-  if value < 40 then
-    return 40
-  end
-  if value > 100 then
-    return 100
-  end
-  return value
-end
+local elapsedMs = Utils.elapsedMs
+local debugLog = Utils.debugLog
 
 function AppState.new(cfg, deps)
   local self = setmetatable({
@@ -41,6 +26,7 @@ function AppState.new(cfg, deps)
     windowService = deps.windowService,
     youtubeService = deps.youtubeService,
     spotifyService = deps.spotifyService,
+    systemAudioService = deps.systemAudioService,
     toast = deps.toast,
     workspaces = {},
     hotkeyManager = nil,
@@ -52,6 +38,7 @@ function AppState.new(cfg, deps)
       lastFocusResult = nil,
       lastPairingMutation = nil,
       lastYoutubeAction = nil,
+      lastActivationPath = nil,
     },
   }, AppState)
 
@@ -84,6 +71,62 @@ end
 
 function AppState:getDebugState()
   return self.debugState
+end
+
+function AppState:getWorkspaceRowModels()
+  local rows = {}
+  for index, workspace in ipairs(self.workspaces) do
+    local isPaired = workspace:isPaired()
+    local statusKind = "unpaired"
+    local className = "unpaired"
+    local label = "[empty]"
+    local isMinimized = false
+    local activationMode = "unresolved"
+
+    if isPaired then
+      local pairedWin = self.windowService.getWindowById(workspace.id)
+      if pairedWin then
+        isMinimized = pairedWin:isMinimized()
+        label = self.windowService.displayTitle(pairedWin)
+        if isMinimized then
+          statusKind = "paired_minimized"
+          className = "paired-minimized"
+        else
+          statusKind = "paired_main"
+          className = "paired"
+        end
+        activationMode = "base_window"
+      elseif workspace:hasTrackedFullscreenTarget() then
+        local fullscreenWin = self.windowService.getWindowById(workspace.fullscreenWindowId)
+        if fullscreenWin then
+          label = self.windowService.displayTitle(fullscreenWin) .. " [fullscreen]"
+          statusKind = "paired_fullscreen"
+          className = "paired-fullscreen"
+          activationMode = "fullscreen_window"
+        else
+          statusKind = "paired_unresolved"
+          className = "paired-unresolved"
+          label = workspace.displayTitle or "[empty]"
+        end
+      else
+        statusKind = "paired_unresolved"
+        className = "paired-unresolved"
+        label = workspace.displayTitle or "[empty]"
+      end
+    end
+
+    rows[#rows + 1] = {
+      index = index,
+      label = label,
+      className = className,
+      isMinimized = isMinimized,
+      canUnpair = isPaired,
+      statusKind = statusKind,
+      activationMode = activationMode,
+      fingerprint = tostring(index) .. "|" .. label,
+    }
+  end
+  return rows
 end
 
 function AppState:getWindowInfo(win)
@@ -148,26 +191,87 @@ function AppState:_resolvePairedWindow(workspace)
   return self.windowService.getWindowById(workspace.id)
 end
 
+function AppState:_windowTitleMatchesWorkspace(workspace, win)
+  if not workspace or not win then
+    return false
+  end
+
+  local meta = self.windowService.pairingMetadata and self.windowService.pairingMetadata(win)
+  if not meta then
+    return false
+  end
+
+  if workspace.bundleID and meta.bundleID and workspace.bundleID ~= meta.bundleID then
+    return false
+  end
+
+  if workspace.titleNormalized and meta.titleNormalized and workspace.titleNormalized ~= meta.titleNormalized then
+    return false
+  end
+
+  return true
+end
+
+function AppState:_findFullscreenCompanion(workspace, sourceWin, fullscreenSpaceId)
+  if not workspace or not sourceWin or not fullscreenSpaceId then
+    return nil
+  end
+  if not self.windowService.candidateWindows then
+    return nil
+  end
+
+  local sourceId = sourceWin:id()
+  for _, candidate in ipairs(self.windowService:candidateWindows()) do
+    if candidate and candidate:id() ~= sourceId
+      and self.windowService.isWindowFullscreen(candidate)
+      and self.windowService.windowIsInSpace(candidate, fullscreenSpaceId)
+      and self:_windowTitleMatchesWorkspace(workspace, candidate) then
+      return candidate
+    end
+  end
+
+  return nil
+end
+
+function AppState:_resolveFullscreenTargetForActivation(workspace)
+  if not workspace or not workspace:hasTrackedFullscreenTarget() then
+    return nil
+  end
+
+  local tracked = self.windowService.getWindowById(workspace.fullscreenWindowId)
+  if tracked then
+    return tracked
+  end
+
+  if not workspace.fullscreenSpaceId then
+    return nil
+  end
+
+  local bestEffort = self.windowService.bestEffortFrontmostWindowInSpace
+    and self.windowService.bestEffortFrontmostWindowInSpace(workspace.fullscreenSpaceId)
+    or nil
+  if bestEffort and self:_windowTitleMatchesWorkspace(workspace, bestEffort) then
+    return bestEffort
+  end
+
+  return nil
+end
+
 function AppState:_workspacePairingSnapshot()
   local pairings = {}
   for index, workspace in ipairs(self.workspaces) do
     if workspace then
-      local hasMetadata = workspace.bundleID
-        or workspace.appName
-        or workspace.titleRaw
-        or workspace.titleNormalized
-        or workspace.displayTitle ~= "[empty]"
-        or workspace.closedAt
-      if workspace.id or hasMetadata then
-        pairings[index] = {
-          windowId = workspace.id,
-          bundleID = workspace.bundleID,
-          appName = workspace.appName,
-          titleRaw = workspace.titleRaw,
-          titleNormalized = workspace.titleNormalized,
-          displayTitle = workspace.displayTitle,
-          closedAt = workspace.closedAt,
-        }
+      local record = Utils.extractPairingRecord({
+        windowId = workspace.id,
+        bundleID = workspace.bundleID,
+        appName = workspace.appName,
+        titleRaw = workspace.titleRaw,
+        titleNormalized = workspace.titleNormalized,
+        displayTitle = workspace.displayTitle ~= "[empty]" and workspace.displayTitle or nil,
+        closedAt = workspace.closedAt,
+      })
+      if record then
+        pairings[index] = record
       end
     end
   end
@@ -350,15 +454,11 @@ function AppState:_formatUnpairToast(workspace, win)
   }
 end
 
-function AppState:_clearWorkspace(workspace)
-  workspace:clear()
-end
-
 function AppState:_clearWorkspaceAndPersist(workspace)
   if not workspace then
     return
   end
-  self:_clearWorkspace(workspace)
+  workspace:clear()
   self:_persistWorkspacePairings()
 end
 
@@ -413,6 +513,7 @@ function AppState:activateSlot(index)
   local result = "noop"
   local focusCode = nil
   local pairingMutation = nil
+  local activationPath = nil
 
   self:_runWorkspaceAction(function()
     local win = hs.window.frontmostWindow()
@@ -439,10 +540,39 @@ function AppState:activateSlot(index)
         focusCode = focusResult.code
         self:_refreshWorkspaceDisplayTitle(workspace, paired)
         result = focusResult.code
+        activationPath = "base-window"
+      elseif workspace:hasTrackedFullscreenTarget() then
+        local switchResult = self.windowService.gotoSpace(workspace.fullscreenSpaceId, self.cfg)
+        if not switchResult.ok then
+          result = switchResult.code or "space_switch_failed"
+          activationPath = "fullscreen-space-switch-failed"
+        else
+          local fullscreenWin = self:_resolveFullscreenTargetForActivation(workspace)
+          if fullscreenWin then
+            workspace:setFullscreenState({
+              fullscreenWindowId = fullscreenWin:id(),
+              fullscreenSpaceId = workspace.fullscreenSpaceId,
+              lastKnownSpaceId = workspace.fullscreenSpaceId,
+            })
+            self.windowService.focusWindowAfterSpaceSwitch(fullscreenWin, self.cfg)
+            self:_refreshWorkspaceDisplayTitle(workspace, fullscreenWin)
+            result = "focus_scheduled_after_space_switch"
+            activationPath = "fullscreen-space-switch"
+          else
+            result = "paired_window_unresolved"
+            activationPath = "fullscreen-target-unresolved"
+          end
+        end
       else
-        result = self:_handleMissingPairedWindow(workspace, "[Paired window missing; cleared]")
-        pairingMutation = "clear_missing"
+        result = "paired_window_unresolved"
+        activationPath = "unresolved"
       end
+      return
+    end
+
+    if workspace:hasTrackedFullscreenTarget() and self.windowService.isWindowFullscreen(win) then
+      result = "already_frontmost_fullscreen"
+      activationPath = "fullscreen-repeat"
       return
     end
 
@@ -463,6 +593,7 @@ function AppState:activateSlot(index)
     lastSlot = index,
     lastFocusResult = focusCode,
     lastPairingMutation = pairingMutation,
+    lastActivationPath = activationPath,
   })
   debugLog(self.cfg, "activateSlot slot=%d result=%s durationMs=%.2f", index, result, elapsedMs(startedAt))
 end
@@ -478,7 +609,7 @@ function AppState:unpairSlot(index)
     if workspace:isPaired() then
       local win = self:_resolvePairedWindow(workspace)
       local toastPayload = self:_formatUnpairToast(workspace, win)
-      self:_clearWorkspace(workspace)
+      workspace:clear()
       self.toast(toastPayload)
       didUnpair = true
     else
@@ -495,7 +626,7 @@ end
 function AppState:unpairAll()
   self:_runPairingAction(function()
     for _, workspace in ipairs(self.workspaces) do
-      self:_clearWorkspace(workspace)
+      workspace:clear()
     end
     self.toast("[Unpaired All Windows]")
   end)
@@ -530,14 +661,10 @@ function AppState:setPopoverAlwaysOnTop(enabled)
 end
 
 function AppState:setPopoverOpacity(opacity)
-  local nextOpacity = opacity
-  if opacity > 1 then
-    local clampedPercent = clampOpacityPercent(math.floor(opacity / 10 + 0.5) * 10)
-    nextOpacity = clampedPercent / 100
-  end
+  local normalized = opacity > 1 and (opacity / 100) or opacity
   self.cfg.popoverBackgroundOpacity = self.settingsStore.setOpacity(
     configModule.keys.popoverBackgroundOpacity,
-    nextOpacity
+    normalized
   )
   self:syncUi()
 end
@@ -626,19 +753,32 @@ function AppState:handleWindowEvent(event, win)
     local deadId = win:id()
     self.youtubeService:handleDestroyedWindowId(deadId)
 
-    local changed = false
+    local basePairingChanged = false
+    local fullscreenStateChanged = false
     local firstChangedSlot = nil
     for _, workspace in ipairs(self.workspaces) do
+      if workspace.fullscreenWindowId == deadId and workspace.id ~= deadId then
+        workspace:clearFullscreenState()
+        fullscreenStateChanged = true
+      end
       if workspace.id == deadId then
+        if workspace:hasTrackedFullscreenTarget()
+          and workspace.fullscreenWindowId == deadId
+          and self.windowService.isWindowFullscreen(win) then
+          workspace:clearFullscreenState()
+          fullscreenStateChanged = true
+          goto continue_window_destroy
+        end
         if not firstChangedSlot then
           firstChangedSlot = self:_slotIndexForWorkspace(workspace)
         end
         workspace:markClosedForRecovery(hs.timer.secondsSinceEpoch())
-        changed = true
+        basePairingChanged = true
       end
+      ::continue_window_destroy::
     end
 
-    if changed then
+    if basePairingChanged then
       self:_persistWorkspacePairings()
       self:_recordDebugAction({
         lastAction = "window_destroyed",
@@ -647,7 +787,43 @@ function AppState:handleWindowEvent(event, win)
       })
       self.toast("[Cleared pairing: window closed]")
       self:syncUi()
+    elseif fullscreenStateChanged then
+      self:syncUi()
     end
+    return
+  end
+
+  if event == hs.window.filter.windowFullscreened then
+    if not win then
+      return
+    end
+    local winId = win:id()
+    for _, workspace in ipairs(self.workspaces) do
+      if workspace.id == winId then
+        local spaceId = self.windowService.getPrimarySpaceForWindow(win)
+        local fullscreenTarget = self:_findFullscreenCompanion(workspace, win, spaceId) or win
+        workspace:setFullscreenState({
+          fullscreenWindowId = fullscreenTarget:id(),
+          fullscreenSpaceId = spaceId,
+          lastKnownSpaceId = spaceId,
+        })
+      end
+    end
+    self:syncUi()
+    return
+  end
+
+  if event == hs.window.filter.windowUnfullscreened then
+    if not win then
+      return
+    end
+    local winId = win:id()
+    for _, workspace in ipairs(self.workspaces) do
+      if workspace.fullscreenWindowId == winId then
+        workspace:clearFullscreenState()
+      end
+    end
+    self:syncUi()
     return
   end
 
@@ -687,57 +863,66 @@ function AppState:handleActiveWindowChange(win)
   end
 end
 
+local POPOVER_ACTIONS = {}
+
+local function slotAction(self, body, method)
+  local slot = tonumber(body.slot) or 0
+  if slot >= 1 and slot <= 9 then
+    method(self, slot, body.sourceWindow)
+  end
+end
+
+POPOVER_ACTIONS["pair"] = function(self, body)
+  slotAction(self, body, self.pairSlot)
+end
+
+POPOVER_ACTIONS["unpair"] = function(self, body)
+  slotAction(self, body, self.unpairSlot)
+end
+
+POPOVER_ACTIONS["unpairAll"] = function(self)
+  self:unpairAll()
+end
+
+POPOVER_ACTIONS["setAutoHideAfterAction"] = function(self, body)
+  self:setPopoverAutoHide(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["setAlwaysOnTop"] = function(self, body)
+  self:setPopoverAlwaysOnTop(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["setPopoverOpacity"] = function(self, body)
+  local rawPercent = tonumber(body.slot)
+  if rawPercent then
+    self:setPopoverOpacity(rawPercent)
+  end
+end
+
+POPOVER_ACTIONS["setDebugWindow"] = function(self, body)
+  self:setDebugWindow(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["updateHotkeyBinding"] = function(self, body)
+  return self:updateHotkeyBinding(body.id, {
+    mods = body.mods,
+    key = body.key,
+    enabled = body.enabled,
+  })
+end
+
+POPOVER_ACTIONS["resetHotkeyBinding"] = function(self, body)
+  return self:resetHotkeyBinding(body.id)
+end
+
+POPOVER_ACTIONS["resetAllHotkeys"] = function(self)
+  return self:resetAllHotkeys()
+end
+
 function AppState:handlePopoverAction(body)
-  local action = body.action
-  if action == "pair" then
-    local slot = tonumber(body.slot) or 0
-    if slot >= 1 and slot <= 9 then
-      self:pairSlot(slot, body.sourceWindow)
-    end
-    return
-  end
-  if action == "unpair" then
-    local slot = tonumber(body.slot) or 0
-    if slot >= 1 and slot <= 9 then
-      self:unpairSlot(slot)
-    end
-    return
-  end
-  if action == "unpairAll" then
-    self:unpairAll()
-    return
-  end
-  if action == "setAutoHideAfterAction" then
-    self:setPopoverAutoHide(tonumber(body.slot) == 1)
-    return
-  end
-  if action == "setAlwaysOnTop" then
-    self:setPopoverAlwaysOnTop(tonumber(body.slot) == 1)
-    return
-  end
-  if action == "setPopoverOpacity" then
-    local rawPercent = tonumber(body.slot)
-    if rawPercent then
-      self:setPopoverOpacity(rawPercent)
-    end
-    return
-  end
-  if action == "setDebugWindow" then
-    self:setDebugWindow(tonumber(body.slot) == 1)
-    return
-  end
-  if action == "updateHotkeyBinding" then
-    return self:updateHotkeyBinding(body.id, {
-      mods = body.mods,
-      key = body.key,
-      enabled = body.enabled,
-    })
-  end
-  if action == "resetHotkeyBinding" then
-    return self:resetHotkeyBinding(body.id)
-  end
-  if action == "resetAllHotkeys" then
-    return self:resetAllHotkeys()
+  local handler = POPOVER_ACTIONS[body.action]
+  if handler then
+    return handler(self, body)
   end
 end
 
@@ -786,19 +971,11 @@ function AppState:spotifyToggleLike()
 end
 
 function AppState:toggleSystemMute()
-  self.spotifyService:toggleSystemMute()
+  self.systemAudioService:toggleMute()
 end
 
 function AppState:adjustSystemVolume(delta)
-  local dev = hs.audiodevice.defaultOutputDevice()
-  if dev then
-    local base = dev:volume() or 25
-    if delta < 0 then
-      dev:setVolume(math.max(0, base + delta))
-    else
-      dev:setVolume(math.min(100, base + delta))
-    end
-  end
+  self.systemAudioService:adjustVolume(delta)
 end
 
 return AppState

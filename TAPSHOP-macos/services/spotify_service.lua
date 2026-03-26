@@ -86,11 +86,4 @@ function SpotifyService:toggleLike()
   hs.osascript.applescript(script)
 end
 
-function SpotifyService:toggleSystemMute()
-  local dev = hs.audiodevice.defaultOutputDevice()
-  if dev then
-    dev:setMuted(not dev:muted())
-  end
-end
-
 return SpotifyService

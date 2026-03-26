@@ -44,6 +44,7 @@ function Workspace:clear()
   self.titleRaw = nil
   self.titleNormalized = nil
   self.closedAt = nil
+  self:clearFullscreenState()
 end
 
 function Workspace:markClosedForRecovery(closedAt)
@@ -96,6 +97,27 @@ end
 
 function Workspace:setDisplayTitle(title)
   self.displayTitle = title or "[empty]"
+end
+
+function Workspace:setFullscreenState(opts)
+  if type(opts) ~= "table" then
+    return
+  end
+  self.fullscreenWindowId = opts.fullscreenWindowId
+  self.fullscreenSpaceId = opts.fullscreenSpaceId
+  self.fullscreenActive = true
+  self.lastKnownSpaceId = opts.lastKnownSpaceId
+end
+
+function Workspace:clearFullscreenState()
+  self.fullscreenWindowId = nil
+  self.fullscreenSpaceId = nil
+  self.fullscreenActive = nil
+  self.lastKnownSpaceId = nil
+end
+
+function Workspace:hasTrackedFullscreenTarget()
+  return self.fullscreenActive == true and self.fullscreenWindowId ~= nil
 end
 
 return Workspace

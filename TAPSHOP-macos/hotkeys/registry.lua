@@ -1,14 +1,10 @@
 local Registry = {}
 
-local function addBinding(bindings, binding)
-  bindings[#bindings + 1] = binding
-end
-
-function Registry.bindings()
+local function buildBindings()
   local bindings = {}
 
   for i = 1, 9 do
-    addBinding(bindings, {
+    bindings[#bindings + 1] = {
       id = "slots.activate." .. tostring(i),
       group = "Window Slots",
       label = "Pair/Toggle Slot " .. tostring(i),
@@ -18,11 +14,11 @@ function Registry.bindings()
       args = { i },
       guarded = false,
       enabled = true,
-    })
+    }
   end
 
   for i = 1, 9 do
-    addBinding(bindings, {
+    bindings[#bindings + 1] = {
       id = "slots.unpair." .. tostring(i),
       group = "Window Slots",
       label = "Unpair Slot " .. tostring(i),
@@ -32,10 +28,10 @@ function Registry.bindings()
       args = { i },
       guarded = false,
       enabled = true,
-    })
+    }
   end
 
-  addBinding(bindings, {
+  bindings[#bindings + 1] = {
     id = "slots.unpairAll",
     group = "Window Slots",
     label = "Unpair All Slots",
@@ -45,11 +41,11 @@ function Registry.bindings()
     args = {},
     guarded = false,
     enabled = true,
-  })
+  }
 
-  addBinding(bindings, {
+  bindings[#bindings + 1] = {
     id = "popover.toggle",
-    group = "YouTube",
+    group = "UI",
     label = "Toggle Popover",
     mods = { "cmd", "alt" },
     key = "`",
@@ -57,8 +53,8 @@ function Registry.bindings()
     args = {},
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekBack.arrow",
     group = "YouTube",
     label = "Seek Back 5s",
@@ -68,8 +64,8 @@ function Registry.bindings()
     args = { "{Left}" },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekForward.arrow",
     group = "YouTube",
     label = "Seek Forward 5s",
@@ -79,8 +75,8 @@ function Registry.bindings()
     args = { "{Right}" },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekBack.j",
     group = "YouTube",
     label = "Seek Back 10s",
@@ -90,8 +86,8 @@ function Registry.bindings()
     args = { "j" },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekForward.l",
     group = "YouTube",
     label = "Seek Forward 10s",
@@ -101,8 +97,8 @@ function Registry.bindings()
     args = { "l" },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.playPause.k",
     group = "YouTube",
     label = "Play or Pause",
@@ -112,8 +108,8 @@ function Registry.bindings()
     args = { "k" },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekBack.f19",
     group = "YouTube",
     label = "Seek Back 5s (F19)",
@@ -123,8 +119,8 @@ function Registry.bindings()
     args = { "{Left}" },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekBack.ctrlF19",
     group = "YouTube",
     label = "Seek Back 10s (Ctrl+F19)",
@@ -134,8 +130,8 @@ function Registry.bindings()
     args = { "j" },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekForward.f21",
     group = "YouTube",
     label = "Seek Forward 5s (F21)",
@@ -145,8 +141,8 @@ function Registry.bindings()
     args = { "{Right}" },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.seekForward.ctrlF21",
     group = "YouTube",
     label = "Seek Forward 10s (Ctrl+F21)",
@@ -156,8 +152,8 @@ function Registry.bindings()
     args = { "l" },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "youtube.playPause.f20",
     group = "YouTube",
     label = "Play or Pause (F20)",
@@ -167,9 +163,9 @@ function Registry.bindings()
     args = { "k" },
     guarded = true,
     enabled = true,
-  })
+  }
 
-  addBinding(bindings, {
+  bindings[#bindings + 1] = {
     id = "spotify.previous",
     group = "Spotify",
     label = "Previous Track",
@@ -179,8 +175,8 @@ function Registry.bindings()
     args = {},
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.playPause",
     group = "Spotify",
     label = "Play or Pause",
@@ -190,8 +186,8 @@ function Registry.bindings()
     args = {},
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.next",
     group = "Spotify",
     label = "Next Track",
@@ -201,8 +197,8 @@ function Registry.bindings()
     args = {},
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.seekBack",
     group = "Spotify",
     label = "Seek Back 5s",
@@ -212,8 +208,8 @@ function Registry.bindings()
     args = { 5 },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.seekForward",
     group = "Spotify",
     label = "Seek Forward 5s",
@@ -223,8 +219,8 @@ function Registry.bindings()
     args = { 5 },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.like",
     group = "Spotify",
     label = "Toggle Like",
@@ -234,8 +230,8 @@ function Registry.bindings()
     args = {},
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.volumeDown",
     group = "Spotify",
     label = "Spotify Volume Down",
@@ -245,8 +241,8 @@ function Registry.bindings()
     args = { 6 },
     guarded = true,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "spotify.volumeUp",
     group = "Spotify",
     label = "Spotify Volume Up",
@@ -256,9 +252,9 @@ function Registry.bindings()
     args = { 6 },
     guarded = true,
     enabled = true,
-  })
+  }
 
-  addBinding(bindings, {
+  bindings[#bindings + 1] = {
     id = "system.volumeDown",
     group = "System Volume",
     label = "Volume Down",
@@ -268,8 +264,8 @@ function Registry.bindings()
     args = { -5 },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "system.volumeUp",
     group = "System Volume",
     label = "Volume Up",
@@ -279,20 +275,26 @@ function Registry.bindings()
     args = { 5 },
     guarded = false,
     enabled = true,
-  })
-  addBinding(bindings, {
+  }
+  bindings[#bindings + 1] = {
     id = "system.mute",
     group = "System Volume",
     label = "Toggle Mute",
     mods = { "cmd", "alt", "ctrl" },
-    key = "M",
+    key = "m",
     action = "toggleSystemMute",
     args = {},
     guarded = false,
     enabled = true,
-  })
+  }
 
   return bindings
+end
+
+local cachedBindings = buildBindings()
+
+function Registry.bindings()
+  return cachedBindings
 end
 
 return Registry
