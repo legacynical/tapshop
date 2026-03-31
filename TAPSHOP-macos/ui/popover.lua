@@ -4,9 +4,11 @@ local debugStyles = require("ui.popover.debug_styles")
 local popoverRender = require("ui.popover.render")
 local popoverStyles = require("ui.popover.styles")
 local popoverTheme = require("ui.popover.theme")
+local Utils = require("utils")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
+local debugLog = Utils.debugLog
 
 function Popover.new(app, cfg, deps)
   local windowService = deps.windowService
@@ -32,11 +34,15 @@ function Popover.new(app, cfg, deps)
   local savedSize = settingsStore.getSize(configModule.keys.popoverSize)
 
   local POP_W = 500
-  local POP_H = 280
-  local POP_MIN_W = 320
-  local POP_MIN_H = 280
-  local POP_MAX_H = 408
+  local POP_H = 273
+  local POP_MIN_W = 300
+  local TARGET_MIN_POPOVER_HEIGHT = 150
+  local BOOTSTRAP_MAX_POPOVER_HEIGHT = 398
   local POP_SCREEN_MARGIN = 32
+  local runtimeMinPopoverHeight = TARGET_MIN_POPOVER_HEIGHT
+  local runtimeMaxPopoverHeight = BOOTSTRAP_MAX_POPOVER_HEIGHT
+  local runtimeMinUiScale = nil
+  local runtimeMaxUiScale = nil
 
   local function normalizeSettingsTab(value)
     if value == "hotkeys" then
@@ -68,13 +74,18 @@ function Popover.new(app, cfg, deps)
       or hs.screen.mainScreen()
   end
 
+  local function effectiveMinPopoverHeight()
+    return math.max(TARGET_MIN_POPOVER_HEIGHT, math.floor((runtimeMinPopoverHeight or TARGET_MIN_POPOVER_HEIGHT) + 0.5))
+  end
+
   local function maxPopoverHeight(screen)
     local visibleFrame = screen:frame()
-    return math.max(POP_MIN_H, math.min(POP_MAX_H, math.floor(visibleFrame.h - POP_SCREEN_MARGIN)))
+    local runtimeMax = math.max(effectiveMinPopoverHeight(), math.floor((runtimeMaxPopoverHeight or BOOTSTRAP_MAX_POPOVER_HEIGHT) + 0.5))
+    return math.max(effectiveMinPopoverHeight(), math.min(runtimeMax, math.floor(visibleFrame.h - POP_SCREEN_MARGIN)))
   end
 
   local function clampPopoverHeight(height, screen)
-    return math.max(POP_MIN_H, math.min(height, maxPopoverHeight(screen or pickScreen())))
+    return math.max(effectiveMinPopoverHeight(), math.min(height, maxPopoverHeight(screen or pickScreen())))
   end
 
   local function currentPopoverSize(screen)
@@ -326,6 +337,55 @@ function Popover.new(app, cfg, deps)
         end
 
         panelRef:getWebview():frame(hs.geometry.rect(nextX, nextY, nextW, nextH))
+        return
+      end
+      if action == "updatePopoverBounds" then
+        local targetMinHeight = tonumber(body.targetMinHeight)
+        local derivedMinHeight = tonumber(body.derivedMinHeight)
+        local derivedMaxHeight = tonumber(body.derivedMaxHeight)
+        local derivedMinUiScale = tonumber(body.derivedMinUiScale)
+        local maxUiScale = tonumber(body.maxUiScale)
+        local measuredMinHeight = tonumber(body.measuredMinHeight)
+        local currentHeight = tonumber(body.currentHeight)
+        local currentUiScale = tonumber(body.currentUiScale)
+        local bodyShellHeight = tonumber(body.bodyShellHeight)
+        local workspaceListHeight = tonumber(body.workspaceListHeight)
+        if not derivedMinHeight or not derivedMaxHeight then
+          return
+        end
+
+        local normalizedMinHeight = math.max(TARGET_MIN_POPOVER_HEIGHT, math.floor(derivedMinHeight + 0.5))
+        local normalizedMaxHeight = math.max(normalizedMinHeight, math.floor(derivedMaxHeight + 0.5))
+        runtimeMinPopoverHeight = normalizedMinHeight
+        runtimeMaxPopoverHeight = normalizedMaxHeight
+        runtimeMinUiScale = derivedMinUiScale
+        runtimeMaxUiScale = maxUiScale
+        debugLog(
+          cfg,
+          "popover.bounds targetMinHeight=%s currentHeight=%s currentUiScale=%s derivedMinHeight=%s derivedMaxHeight=%s derivedMinUiScale=%s maxUiScale=%s measuredMinHeight=%s bodyShellHeight=%s workspaceListHeight=%s",
+          tostring(targetMinHeight),
+          tostring(currentHeight),
+          tostring(currentUiScale),
+          tostring(runtimeMinPopoverHeight),
+          tostring(runtimeMaxPopoverHeight),
+          tostring(runtimeMinUiScale),
+          tostring(runtimeMaxUiScale),
+          tostring(measuredMinHeight),
+          tostring(bodyShellHeight),
+          tostring(workspaceListHeight)
+        )
+
+        if not isResizing then
+          local frame = panelRef:getWebview():frame()
+          local clampedHeight = clampPopoverHeight(frame.h)
+          if clampedHeight ~= frame.h then
+            panelRef:getWebview():frame(hs.geometry.rect(frame.x, frame.y, frame.w, clampedHeight))
+            saveSizeFromFrame(panelRef)
+          elseif savedSize and savedSize.h ~= clampPopoverHeight(savedSize.h) then
+            savedSize.h = clampPopoverHeight(savedSize.h)
+            settingsStore.setSize(configModule.keys.popoverSize, savedSize)
+          end
+        end
         return
       end
       if action == "resizeEnd" then

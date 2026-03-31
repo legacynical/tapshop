@@ -450,10 +450,12 @@ function saveRemapModal() {
   });
 }
 
-var MIN_UI_SCALE = 0.5;
-var MAX_UI_SCALE = 1.5;
+var TARGET_MIN_POPOVER_HEIGHT = 150;
+var HARD_MIN_UI_SCALE_FLOOR = 0.6;
+var MAX_UI_SCALE = 1.75;
 var RESIZE_ZONE = 10;
 var TITLE_TAP_WINDOW_MS = 650;
+var lastReportedBounds = null;
 
 function setUiScale(scale) {
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
@@ -463,14 +465,10 @@ function readPx(value) {
   return parseFloat(value || "0") || 0;
 }
 
-function measureContentHeightAtScale(scale) {
+function measureWorkspaceHeightAtScale(scale) {
   var container = document.querySelector(".container");
   var header = document.querySelector(".header");
   var workspaceList = document.querySelector(".workspace-list");
-  var settingsSheet = document.querySelector(".settings-sheet");
-  var settingsHead = document.querySelector(".settings-head");
-  var settingsScroll = document.querySelector(".settings-scroll");
-  var activePanel = document.querySelector('.settings-panel[data-settings-panel="' + currentSettingsTab() + '"]');
   if (!container || !header) return 0;
 
   setUiScale(scale);
@@ -485,45 +483,165 @@ function measureContentHeightAtScale(scale) {
     + header.getBoundingClientRect().height
     + containerGap;
 
-  if (settingsOpen() && settingsSheet && settingsHead && settingsScroll && activePanel) {
-    var sheetStyle = window.getComputedStyle(settingsSheet);
-    var scrollStyle = window.getComputedStyle(settingsScroll);
-    total = total
-      + readPx(sheetStyle.paddingTop)
-      + readPx(sheetStyle.paddingBottom)
-      + readPx(sheetStyle.borderTopWidth)
-      + readPx(sheetStyle.borderBottomWidth)
-      + readPx(sheetStyle.rowGap || sheetStyle.gap)
-      + settingsHead.getBoundingClientRect().height
-      + readPx(scrollStyle.paddingTop)
-      + readPx(scrollStyle.paddingBottom)
-      + Math.min(activePanel.scrollHeight, settingsScroll.getBoundingClientRect().height || activePanel.scrollHeight);
-    return total;
-  }
-
   if (!workspaceList) return total;
   return total + workspaceList.getBoundingClientRect().height;
 }
 
+function readLiveWorkspaceLayoutMetrics() {
+  var bodyShell = document.querySelector(".body-shell");
+  var workspaceList = document.querySelector(".workspace-list");
+  return {
+    bodyShellHeight: bodyShell ? bodyShell.getBoundingClientRect().height : 0,
+    workspaceListHeight: workspaceList ? workspaceList.getBoundingClientRect().height : 0
+  };
+}
+
+function solveScaleForHeight(targetHeight, minScale, maxScale) {
+  var lowScale = Math.min(minScale, maxScale);
+  var highScale = Math.max(minScale, maxScale);
+  var lowHeight = measureWorkspaceHeightAtScale(lowScale);
+  var highHeight = measureWorkspaceHeightAtScale(highScale);
+
+  if (!lowHeight || !highHeight) {
+    return {
+      scale: lowScale,
+      height: lowHeight || 0,
+      clamped: true
+    };
+  }
+
+  if (targetHeight <= lowHeight) {
+    return {
+      scale: lowScale,
+      height: lowHeight,
+      clamped: true
+    };
+  }
+
+  if (targetHeight >= highHeight) {
+    return {
+      scale: highScale,
+      height: highHeight,
+      clamped: true
+    };
+  }
+
+  var bestScale = lowScale;
+  var bestHeight = lowHeight;
+  var bestDiff = Math.abs(targetHeight - lowHeight);
+
+  for (var i = 0; i < 18; i += 1) {
+    var midScale = (lowScale + highScale) / 2;
+    var midHeight = measureWorkspaceHeightAtScale(midScale);
+    var midDiff = Math.abs(targetHeight - midHeight);
+
+    if (midDiff < bestDiff) {
+      bestScale = midScale;
+      bestHeight = midHeight;
+      bestDiff = midDiff;
+    }
+
+    if (midHeight < targetHeight) {
+      lowScale = midScale;
+    } else {
+      highScale = midScale;
+    }
+  }
+
+  return {
+    scale: bestScale,
+    height: bestHeight,
+    clamped: false
+  };
+}
+
+function reportPopoverBounds(bounds) {
+  var layout = readLiveWorkspaceLayoutMetrics();
+  var next = {
+    targetMinHeight: Math.ceil(bounds.targetMinHeight),
+    derivedMinHeight: Math.ceil(bounds.derivedMinHeight),
+    derivedMaxHeight: Math.ceil(bounds.derivedMaxHeight),
+    derivedMinUiScale: Number(bounds.derivedMinUiScale.toFixed(3)),
+    maxUiScale: Number(bounds.maxUiScale.toFixed(3)),
+    measuredMinHeight: Number(bounds.measuredMinHeight.toFixed(3)),
+    currentHeight: Math.ceil(bounds.currentHeight),
+    currentUiScale: Number(bounds.currentUiScale.toFixed(3)),
+    bodyShellHeight: Number(layout.bodyShellHeight.toFixed(3)),
+    workspaceListHeight: Number(layout.workspaceListHeight.toFixed(3))
+  };
+  if (
+    lastReportedBounds
+    && lastReportedBounds.targetMinHeight === next.targetMinHeight
+    && lastReportedBounds.derivedMinHeight === next.derivedMinHeight
+    && lastReportedBounds.derivedMaxHeight === next.derivedMaxHeight
+    && lastReportedBounds.derivedMinUiScale === next.derivedMinUiScale
+    && lastReportedBounds.maxUiScale === next.maxUiScale
+    && lastReportedBounds.measuredMinHeight === next.measuredMinHeight
+    && lastReportedBounds.currentHeight === next.currentHeight
+    && lastReportedBounds.currentUiScale === next.currentUiScale
+    && lastReportedBounds.bodyShellHeight === next.bodyShellHeight
+    && lastReportedBounds.workspaceListHeight === next.workspaceListHeight
+  ) {
+    return;
+  }
+  lastReportedBounds = next;
+  sendAction("updatePopoverBounds", next);
+}
+
+function computeVerticalSizingModel() {
+  var floorHeight = measureWorkspaceHeightAtScale(HARD_MIN_UI_SCALE_FLOOR);
+  var maxHeightAtScale = measureWorkspaceHeightAtScale(MAX_UI_SCALE);
+  if (!floorHeight || !maxHeightAtScale) {
+    return null;
+  }
+
+  if (MAX_UI_SCALE <= HARD_MIN_UI_SCALE_FLOOR || maxHeightAtScale <= floorHeight) {
+    return {
+      targetMinHeight: TARGET_MIN_POPOVER_HEIGHT,
+      derivedMinHeight: floorHeight,
+      derivedMaxHeight: floorHeight,
+      derivedMinUiScale: HARD_MIN_UI_SCALE_FLOOR,
+      maxUiScale: HARD_MIN_UI_SCALE_FLOOR,
+      measuredMinHeight: floorHeight
+    };
+  }
+
+  var minSolution = solveScaleForHeight(TARGET_MIN_POPOVER_HEIGHT, HARD_MIN_UI_SCALE_FLOOR, MAX_UI_SCALE);
+  var derivedMinHeight = minSolution.clamped ? minSolution.height : TARGET_MIN_POPOVER_HEIGHT;
+
+  return {
+    targetMinHeight: TARGET_MIN_POPOVER_HEIGHT,
+    derivedMinHeight: derivedMinHeight,
+    derivedMaxHeight: maxHeightAtScale,
+    derivedMinUiScale: minSolution.scale,
+    maxUiScale: MAX_UI_SCALE,
+    measuredMinHeight: minSolution.height
+  };
+}
+
 function updateUiScale() {
-  var baseHeight = measureContentHeightAtScale(1);
-  var maxHeight = measureContentHeightAtScale(MAX_UI_SCALE);
-  if (!baseHeight || !maxHeight || maxHeight <= baseHeight) {
+  var model = computeVerticalSizingModel();
+  if (!model) {
     setUiScale(1);
+    reportPopoverBounds({
+      targetMinHeight: TARGET_MIN_POPOVER_HEIGHT,
+      derivedMinHeight: TARGET_MIN_POPOVER_HEIGHT,
+      derivedMaxHeight: TARGET_MIN_POPOVER_HEIGHT,
+      derivedMinUiScale: 1,
+      maxUiScale: 1,
+      measuredMinHeight: TARGET_MIN_POPOVER_HEIGHT,
+      currentHeight: window.innerHeight,
+      currentUiScale: 1
+    });
     return;
   }
 
-  var scalableHeight = (maxHeight - baseHeight) / (MAX_UI_SCALE - 1);
-  if (scalableHeight <= 0) {
-    setUiScale(1);
-    return;
-  }
-
-  var fixedHeight = baseHeight - scalableHeight;
-  var scale = (window.innerHeight - fixedHeight) / scalableHeight;
-  scale = Math.min(MAX_UI_SCALE, scale);
-  scale = Math.max(MIN_UI_SCALE, scale);
+  var currentSolution = solveScaleForHeight(window.innerHeight, model.derivedMinUiScale, model.maxUiScale);
+  var scale = currentSolution.scale;
   setUiScale(scale);
+  model.currentHeight = window.innerHeight;
+  model.currentUiScale = scale;
+  reportPopoverBounds(model);
 }
 
 function getResizeDirection(e) {
