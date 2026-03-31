@@ -1,6 +1,7 @@
 local html = require("ui.html")
 
 local Icons = {}
+local APP_ICON_URL_CACHE = {}
 
 local ICON_SVGS = {
   hide = [=[
@@ -28,7 +29,7 @@ local ICON_SVGS = {
 
 function Icons.iconSvg(name)
   local icon = ICON_SVGS[name] or ""
-  return '<svg class="header-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+  return '<svg class="header-action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
     .. icon
     .. "</svg>"
 end
@@ -47,6 +48,49 @@ function Icons.headerIconButton(opts)
     .. '">'
     .. Icons.iconSvg(opts.icon)
     .. "</button>"
+end
+
+function Icons.appIconUrl(bundleID, size)
+  if type(bundleID) ~= "string" or bundleID == "" then
+    return nil
+  end
+
+  local cacheKey = table.concat({ bundleID, tostring(size or 18) }, "::")
+  local cached = APP_ICON_URL_CACHE[cacheKey]
+  if cached ~= nil then
+    return cached ~= false and cached or nil
+  end
+
+  local image = hs.image.imageFromAppBundle(bundleID)
+  if not image then
+    APP_ICON_URL_CACHE[cacheKey] = false
+    return nil
+  end
+
+  local ok, encoded = pcall(function()
+    return image:setSize({ h = size or 18, w = size or 18 }):encodeAsURLString()
+  end)
+  APP_ICON_URL_CACHE[cacheKey] = ok and encoded or false
+  return ok and encoded or nil
+end
+
+function Icons.appIconHtml(bundleID, appName, className, size)
+  local iconUrl = Icons.appIconUrl(bundleID, size or 18)
+  if not iconUrl then
+    return ""
+  end
+
+  return '<img class="'
+    .. html.escape(className or "slot-app-icon")
+    .. '" src="'
+    .. html.escape(iconUrl)
+    .. '" alt="" aria-hidden="true" title="'
+    .. html.escape(appName or "")
+    .. '">'
+end
+
+function Icons.slotAppIconHtml(bundleID, appName)
+  return Icons.appIconHtml(bundleID, appName, "slot-app-icon", 18)
 end
 
 return Icons

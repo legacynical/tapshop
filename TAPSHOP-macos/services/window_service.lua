@@ -100,12 +100,22 @@ function WindowService.displayTitle(win)
 
   local app = win:application()
   local prefix = app and app:name() or "App"
-  local title = win:title() or ""
-  if title == "" then
-    title = "[untitled]"
-  end
+  local title = WindowService.windowTitle(win)
 
   return "[" .. prefix .. "] " .. title
+end
+
+function WindowService.windowTitle(win)
+  if not win then
+    return "[empty]"
+  end
+
+  local title = win:title() or ""
+  if title == "" then
+    return "[untitled]"
+  end
+
+  return title
 end
 
 function WindowService.normalizeWindowTitle(title)

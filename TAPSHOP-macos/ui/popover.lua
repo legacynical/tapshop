@@ -147,28 +147,24 @@ function Popover.new(app, cfg, deps)
       or windowService.getWindowInfo(callerWin)
       or windowService.getWindowInfo()
     local primaryLine = "No active window found"
-    local secondaryLine = ""
+    local bundleID = nil
+    local appName = nil
 
     if info then
       local rawTitle = info.title or ""
       local title = rawTitle:match("%S") and rawTitle or "[untitled]"
-      local windowId = tostring(info.id or "?")
-      local appName = info.appName or ""
+      appName = info.appName or ""
+      bundleID = info.bundleID or nil
 
       primaryLine = title
-      if appName:match("%S") then
-        secondaryLine = string.format("%s (%s)", appName, windowId)
-      else
-        secondaryLine = string.format("(%s)", windowId)
-      end
     end
 
-    return primaryLine, secondaryLine
+    return primaryLine, bundleID, appName
   end
 
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
-    local primaryLine, secondaryLine = currentHeaderLines()
+    local primaryLine, headerBundleID, headerAppName = currentHeaderLines()
     local css = cachedThemeCss or popoverStyles.buildCss(theme)
     local shouldRenderHotkeys = settingsState.open and settingsState.tab == "hotkeys"
     local hotkeyState = {
@@ -196,7 +192,8 @@ function Popover.new(app, cfg, deps)
       script = clientScript.script,
       theme = theme,
       primaryLine = primaryLine,
-      secondaryLine = secondaryLine,
+      headerBundleID = headerBundleID,
+      headerAppName = headerAppName,
       config = {
         autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
         alwaysOnTop = cfg.popoverAlwaysOnTop == true,

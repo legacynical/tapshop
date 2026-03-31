@@ -58,11 +58,15 @@ end
 local function rowHtml(row)
   local minBadge = row.isMinimized and '<span class="min-badge">MIN</span>' or ""
   local unpairClass = row.canUnpair and "btn btn-unpair" or "btn btn-unpair off"
+  local appIcon = icons.slotAppIconHtml(row.bundleID, row.appName)
 
   return "      <div class=\"row\">\n"
     .. "        <span class=\"slot-num\">" .. tostring(row.index) .. "</span>\n"
     .. "        <span class=\"slot-label " .. row.className .. "\"><span class=\"slot-text-bg\">"
+    .. appIcon
+    .. "<span class=\"slot-text\">"
     .. html.escape(row.label)
+    .. "</span>"
     .. "</span>"
     .. minBadge
     .. "</span>\n"
@@ -253,6 +257,7 @@ function Render.buildHtml(ctx)
   local workspaceDimClass = ctx.settings.open and " is-dimmed" or ""
   local generalActive = ctx.settings.tab ~= "hotkeys" and " is-active" or ""
   local hotkeysActive = ctx.settings.tab == "hotkeys" and " is-active" or ""
+  local headerAppIcon = icons.appIconHtml(ctx.headerBundleID, ctx.headerAppName, "header-active-win-icon", 16)
 
   local parts = {
     "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n",
@@ -263,10 +268,10 @@ function Render.buildHtml(ctx)
     html.escape(ctx.settings.tab or "general"),
     "\" data-settings-scroll-top=\"",
     html.escape(tostring(ctx.settings.scrollTop or 0)),
-    "\">\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-details\">\n        <span class=\"header-primary\">",
+    "\">\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-active-win\">",
+    headerAppIcon,
+    "<span class=\"header-active-win-title\">",
     html.escape(ctx.primaryLine),
-    "</span>\n        <span class=\"header-secondary\">",
-    html.escape(ctx.secondaryLine),
     "</span>\n      </div>\n      <div class=\"header-actions\">\n        ",
     icons.headerIconButton({
       className = "header-danger",

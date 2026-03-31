@@ -74,6 +74,24 @@ function AppState:getDebugState()
 end
 
 function AppState:getWorkspaceRowModels()
+  local function persistedWindowTitle(workspace)
+    if workspace.titleRaw and workspace.titleRaw:match("%S") then
+      return workspace.titleRaw
+    end
+
+    local displayTitle = workspace.displayTitle or ""
+    local parsedTitle = displayTitle:match("^%b[]%s+(.*)$")
+    if parsedTitle and parsedTitle:match("%S") then
+      return parsedTitle
+    end
+
+    if displayTitle:match("%S") then
+      return displayTitle
+    end
+
+    return "[empty]"
+  end
+
   local rows = {}
   for index, workspace in ipairs(self.workspaces) do
     local isPaired = workspace:isPaired()
@@ -82,12 +100,17 @@ function AppState:getWorkspaceRowModels()
     local label = "[empty]"
     local isMinimized = false
     local activationMode = "unresolved"
+    local bundleID = workspace.bundleID
+    local appName = workspace.appName
 
     if isPaired then
       local pairedWin = self.windowService.getWindowById(workspace.id)
       if pairedWin then
+        local app = pairedWin:application()
         isMinimized = pairedWin:isMinimized()
-        label = self.windowService.displayTitle(pairedWin)
+        label = self.windowService.windowTitle(pairedWin)
+        bundleID = app and app:bundleID() or bundleID
+        appName = app and app:name() or appName
         if isMinimized then
           statusKind = "paired_minimized"
           className = "paired-minimized"
@@ -99,19 +122,22 @@ function AppState:getWorkspaceRowModels()
       elseif workspace:hasTrackedFullscreenTarget() then
         local fullscreenWin = self.windowService.getWindowById(workspace.fullscreenWindowId)
         if fullscreenWin then
-          label = self.windowService.displayTitle(fullscreenWin) .. " [fullscreen]"
+          local app = fullscreenWin:application()
+          label = self.windowService.windowTitle(fullscreenWin) .. " [fullscreen]"
+          bundleID = app and app:bundleID() or bundleID
+          appName = app and app:name() or appName
           statusKind = "paired_fullscreen"
           className = "paired-fullscreen"
           activationMode = "fullscreen_window"
         else
           statusKind = "paired_unresolved"
           className = "paired-unresolved"
-          label = workspace.displayTitle or "[empty]"
+          label = persistedWindowTitle(workspace)
         end
       else
         statusKind = "paired_unresolved"
         className = "paired-unresolved"
-        label = workspace.displayTitle or "[empty]"
+        label = persistedWindowTitle(workspace)
       end
     end
 
@@ -121,6 +147,8 @@ function AppState:getWorkspaceRowModels()
       className = className,
       isMinimized = isMinimized,
       canUnpair = isPaired,
+      bundleID = bundleID,
+      appName = appName,
       statusKind = statusKind,
       activationMode = activationMode,
       fingerprint = tostring(index) .. "|" .. label,
