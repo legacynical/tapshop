@@ -172,9 +172,21 @@ function WindowService.focusOrRestore(win, cfg)
   return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
 end
 
-function WindowService.currentSpaceId()
+function WindowService.focusedSpaceId()
+  local focusedSpaceFn = hs.spaces and hs.spaces.focusedSpace
+  if type(focusedSpaceFn) == "function" then
+    local ok, focusedSpaceId = pcall(focusedSpaceFn)
+    if ok and type(focusedSpaceId) == "number" then
+      return focusedSpaceId
+    end
+  end
+
   local screen = hs.screen.mainScreen()
   return hs.spaces.activeSpaceOnScreen(screen)
+end
+
+function WindowService.currentSpaceId()
+  return WindowService.focusedSpaceId()
 end
 
 function WindowService.waitForSpace(spaceId, cfg)
@@ -216,7 +228,16 @@ function WindowService.isWindowFullscreen(win)
 end
 
 function WindowService.getPrimarySpaceForWindow(win)
-  local spaceIds = WindowService.getWindowSpaces(win)
+  local ok, spaceIdsOrErr = pcall(WindowService.getWindowSpaces, win)
+  if not ok then
+    return nil
+  end
+
+  local spaceIds = spaceIdsOrErr
+  if type(spaceIds) ~= "table" or #spaceIds == 0 then
+    return nil
+  end
+
   for _, spaceId in ipairs(spaceIds) do
     if WindowService.isFullscreenSpace(spaceId) then
       return spaceId

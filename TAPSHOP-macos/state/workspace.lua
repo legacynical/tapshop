@@ -12,6 +12,7 @@ function Workspace.new(label, minimizeThreshold)
     titleRaw = nil,
     titleNormalized = nil,
     closedAt = nil,
+    lastKnownSpaceId = nil,
     _minimizeThreshold = minimizeThreshold,
   }, Workspace)
 end
@@ -44,6 +45,7 @@ function Workspace:clear()
   self.titleRaw = nil
   self.titleNormalized = nil
   self.closedAt = nil
+  self.lastKnownSpaceId = nil
   self:clearFullscreenState()
 end
 
@@ -113,7 +115,6 @@ function Workspace:clearFullscreenState()
   self.fullscreenWindowId = nil
   self.fullscreenSpaceId = nil
   self.fullscreenActive = nil
-  self.lastKnownSpaceId = nil
 end
 
 function Workspace:hasTrackedFullscreenTarget()
