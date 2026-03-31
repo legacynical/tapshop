@@ -175,12 +175,12 @@ function DebugWindow.new(app, cfg, deps)
     handleAction = function(_, msg)
       local body = msg.body or {}
       if body.action == "disableDebugWindow" then
-        app:setDebugWindow(false)
+        app:setDebugMode(false)
       end
     end,
     windowCallback = function(_, act)
-      if act == "closing" and cfg.popoverDebugWindow then
-        app:setDebugWindow(false)
+      if act == "closing" and cfg.isDebugMode then
+        app:setDebugMode(false)
       end
     end,
   })
@@ -196,7 +196,7 @@ function DebugWindow.new(app, cfg, deps)
   end
 
   function instance:syncVisibility()
-    panel:syncVisibility(cfg.popoverDebugWindow)
+    panel:syncVisibility(cfg.isDebugMode)
   end
 
   return instance

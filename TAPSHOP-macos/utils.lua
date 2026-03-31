@@ -5,7 +5,7 @@ function Utils.elapsedMs(startedAt)
 end
 
 function Utils.debugLog(cfg, fmt, ...)
-  if cfg and cfg.isGuiDebugMode then
+  if cfg and cfg.isDebugMode then
     hs.printf("[tapshop-perf] " .. fmt, ...)
   end
 end

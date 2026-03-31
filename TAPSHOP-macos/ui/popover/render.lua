@@ -173,8 +173,8 @@ local function generalTabHtml(config)
     .. "              </div>\n"
     .. "              <label class=\"settings-item\">\n"
     .. "                <input type=\"checkbox\" "
-    .. checkedAttr(config.debugWindow)
-    .. " onchange=\"sendAction('setDebugWindow', { slot: this.checked ? 1 : 0 })\">\n"
+    .. checkedAttr(config.debugMode)
+    .. " onchange=\"sendAction('setDebugMode', { slot: this.checked ? 1 : 0 })\">\n"
     .. "                <span>Debug</span>\n"
     .. "              </label>\n"
     .. "            </div>\n"
