@@ -222,6 +222,19 @@ function WindowService.getWindowSpaces(win)
   return hs.spaces.windowSpaces(win) or {}
 end
 
+function WindowService.getWindowSpacesById(windowId)
+  if type(windowId) ~= "number" or windowId < 1 or windowId % 1 ~= 0 then
+    return {}
+  end
+
+  local ok, spaceIds = pcall(hs.spaces.windowSpaces, windowId)
+  if not ok or type(spaceIds) ~= "table" then
+    return {}
+  end
+
+  return spaceIds
+end
+
 function WindowService.getSpaceType(spaceId)
   if not spaceId then
     return nil
