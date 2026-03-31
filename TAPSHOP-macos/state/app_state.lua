@@ -360,6 +360,19 @@ end
 
 function AppState:_pairWorkspace(workspace, windowId, win)
   workspace:pairWithMetadata(windowId, self.windowService.displayTitle(win), self.windowService.pairingMetadata(win))
+  workspace:clearFullscreenState()
+  local spaceId = self:_updateWorkspaceRuntimeSpaceState(
+    workspace,
+    win,
+    self.windowService.isWindowFullscreen(win)
+  )
+  if workspace.fullscreenActive == true then
+    workspace:setFullscreenState({
+      fullscreenWindowId = win:id(),
+      fullscreenSpaceId = spaceId,
+      lastKnownSpaceId = spaceId,
+    })
+  end
 end
 
 function AppState:_slotIndexForWorkspace(workspace)
@@ -369,6 +382,104 @@ function AppState:_slotIndexForWorkspace(workspace)
     end
   end
   return nil
+end
+
+function AppState:_updateWorkspaceRuntimeSpaceState(workspace, win, isFullscreen)
+  if not workspace or not win then
+    return nil
+  end
+
+  local spaceId = self.windowService.getPrimarySpaceForWindow(win)
+  workspace.lastKnownSpaceId = spaceId
+  workspace.fullscreenActive = isFullscreen == true
+  return spaceId
+end
+
+function AppState:_resolvedTargetSpaceForWindow(win, focusedSpaceId)
+  if not win or not self.windowService.getWindowSpaces then
+    return nil
+  end
+
+  local spaceIds = self.windowService.getWindowSpaces(win)
+  if type(spaceIds) ~= "table" or #spaceIds == 0 then
+    return nil, false, nil
+  end
+
+  local primarySpaceId = nil
+  for _, spaceId in ipairs(spaceIds) do
+    if not primarySpaceId then
+      primarySpaceId = spaceId
+    end
+    if self.windowService.isFullscreenSpace
+      and self.windowService.isFullscreenSpace(spaceId) then
+      primarySpaceId = spaceId
+      break
+    end
+  end
+
+  if focusedSpaceId ~= nil then
+    for _, spaceId in ipairs(spaceIds) do
+      if spaceId == focusedSpaceId then
+        return nil, true, primarySpaceId or focusedSpaceId
+      end
+    end
+  end
+
+  return primarySpaceId, false, primarySpaceId
+end
+
+function AppState:_activateResolvedPairedWindow(workspace, paired, focusedSpaceId)
+  if not workspace or not paired then
+    return nil
+  end
+
+  local shouldInspectSpaces = workspace.lastKnownSpaceId ~= nil
+    and focusedSpaceId ~= nil
+    and workspace.lastKnownSpaceId ~= focusedSpaceId
+
+  if shouldInspectSpaces then
+    local targetSpaceId, inFocusedSpace, resolvedSpaceId = self:_resolvedTargetSpaceForWindow(paired, focusedSpaceId)
+    if inFocusedSpace then
+      if resolvedSpaceId then
+        workspace.lastKnownSpaceId = resolvedSpaceId
+      end
+      self:_refreshWorkspaceDisplayTitle(workspace, paired)
+      local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
+      return {
+        focusCode = focusResult.code,
+        result = focusResult.code,
+        activationPath = "base-window",
+      }
+    end
+
+    if targetSpaceId then
+      local switchResult = self.windowService.gotoSpace(targetSpaceId, self.cfg)
+      if switchResult.ok then
+        workspace.lastKnownSpaceId = targetSpaceId
+        self:_refreshWorkspaceDisplayTitle(workspace, paired)
+        local focusResult = self.windowService.focusWindowAfterSpaceSwitch(paired, self.cfg)
+        return {
+          focusCode = focusResult.code,
+          result = focusResult.code,
+          activationPath = "base-window-space-switch",
+        }
+      end
+
+      return {
+        focusCode = nil,
+        result = switchResult.code or "space_switch_failed",
+        activationPath = "base-window-space-switch-failed",
+      }
+    end
+  end
+
+  self:_refreshWorkspaceDisplayTitle(workspace, paired)
+  local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
+  return {
+    focusCode = focusResult.code,
+    result = focusResult.code,
+    activationPath = "base-window",
+  }
 end
 
 function AppState:_isWindowAlreadyPaired(windowId)
@@ -536,11 +647,11 @@ function AppState:activateSlot(index)
       local paired = self:_resolvePairedWindow(workspace)
       if paired then
         workspace:resetInputBuffer()
-        local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
-        focusCode = focusResult.code
-        self:_refreshWorkspaceDisplayTitle(workspace, paired)
-        result = focusResult.code
-        activationPath = "base-window"
+        local focusedSpaceId = self.windowService.focusedSpaceId and self.windowService.focusedSpaceId() or nil
+        local activation = self:_activateResolvedPairedWindow(workspace, paired, focusedSpaceId)
+        focusCode = activation and activation.focusCode or nil
+        result = activation and activation.result or "focus_requested"
+        activationPath = activation and activation.activationPath or "base-window"
       elseif workspace:hasTrackedFullscreenTarget() then
         local switchResult = self.windowService.gotoSpace(workspace.fullscreenSpaceId, self.cfg)
         if not switchResult.ok then
@@ -564,6 +675,7 @@ function AppState:activateSlot(index)
           end
         end
       else
+        self.toast("Window not found in any spaces")
         result = "paired_window_unresolved"
         activationPath = "unresolved"
       end
@@ -800,7 +912,7 @@ function AppState:handleWindowEvent(event, win)
     local winId = win:id()
     for _, workspace in ipairs(self.workspaces) do
       if workspace.id == winId then
-        local spaceId = self.windowService.getPrimarySpaceForWindow(win)
+        local spaceId = self:_updateWorkspaceRuntimeSpaceState(workspace, win, true)
         local fullscreenTarget = self:_findFullscreenCompanion(workspace, win, spaceId) or win
         workspace:setFullscreenState({
           fullscreenWindowId = fullscreenTarget:id(),
@@ -820,7 +932,15 @@ function AppState:handleWindowEvent(event, win)
     local winId = win:id()
     for _, workspace in ipairs(self.workspaces) do
       if workspace.fullscreenWindowId == winId then
+        local spaceId = self:_updateWorkspaceRuntimeSpaceState(workspace, win, false)
         workspace:clearFullscreenState()
+        workspace.lastKnownSpaceId = spaceId
+        workspace.fullscreenActive = false
+      elseif workspace.id == winId then
+        local spaceId = self:_updateWorkspaceRuntimeSpaceState(workspace, win, false)
+        workspace:clearFullscreenState()
+        workspace.lastKnownSpaceId = spaceId
+        workspace.fullscreenActive = false
       end
     end
     self:syncUi()
