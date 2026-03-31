@@ -429,6 +429,10 @@ function AppState:_resolvedTargetSpaceForWindow(win, focusedSpaceId)
   end
 
   local spaceIds = self.windowService.getWindowSpaces(win)
+  return self:_resolvedTargetSpaceFromSpaceIds(spaceIds, focusedSpaceId)
+end
+
+function AppState:_resolvedTargetSpaceFromSpaceIds(spaceIds, focusedSpaceId)
   if type(spaceIds) ~= "table" or #spaceIds == 0 then
     return nil, false, nil
   end
@@ -507,6 +511,50 @@ function AppState:_activateResolvedPairedWindow(workspace, paired, focusedSpaceI
     focusCode = focusResult.code,
     result = focusResult.code,
     activationPath = "base-window",
+  }
+end
+
+function AppState:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId)
+  if not workspace or not workspace.id then
+    return nil
+  end
+
+  if workspace.lastKnownSpaceId == nil or workspace.lastKnownSpaceId == focusedSpaceId then
+    return nil
+  end
+
+  if not self.windowService.getWindowSpacesById then
+    return nil
+  end
+
+  local spaceIds = self.windowService.getWindowSpacesById(workspace.id)
+  local targetSpaceId, inFocusedSpace = self:_resolvedTargetSpaceFromSpaceIds(spaceIds, focusedSpaceId)
+  if inFocusedSpace or not targetSpaceId then
+    return nil
+  end
+
+  local switchResult = self.windowService.gotoSpace(targetSpaceId, self.cfg)
+  if not switchResult.ok then
+    return nil
+  end
+
+  local resolved = self:_resolvePairedWindow(workspace)
+  if not resolved then
+    return nil
+  end
+
+  self:_updateWorkspaceRuntimeSpaceState(
+    workspace,
+    resolved,
+    self.windowService.isWindowFullscreen(resolved)
+  )
+  workspace.lastKnownSpaceId = targetSpaceId
+  self:_refreshWorkspaceDisplayTitle(workspace, resolved)
+  local focusResult = self.windowService.focusWindowAfterSpaceSwitch(resolved, self.cfg)
+  return {
+    focusCode = focusResult.code,
+    result = focusResult.code,
+    activationPath = "base-window-id-space-switch",
   }
 end
 
@@ -703,9 +751,17 @@ function AppState:activateSlot(index)
           end
         end
       else
-        self.toast("Window not found in any spaces")
-        result = "paired_window_unresolved"
-        activationPath = "unresolved"
+        local focusedSpaceId = self.windowService.focusedSpaceId and self.windowService.focusedSpaceId() or nil
+        local activation = self:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId)
+        if activation then
+          focusCode = activation.focusCode
+          result = activation.result
+          activationPath = activation.activationPath
+        else
+          self.toast("Window not found in any spaces")
+          result = "paired_window_unresolved"
+          activationPath = "unresolved"
+        end
       end
       return
     end
