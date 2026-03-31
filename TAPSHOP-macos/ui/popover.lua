@@ -183,7 +183,7 @@ function Popover.new(app, cfg, deps)
       end
     end
 
-    if cfg.popoverDebugWindow then
+    if cfg.isDebugMode then
       css = css .. "\n" .. debugStyles.css
     end
 
@@ -197,7 +197,7 @@ function Popover.new(app, cfg, deps)
       config = {
         autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
         alwaysOnTop = cfg.popoverAlwaysOnTop == true,
-        debugWindow = cfg.popoverDebugWindow == true,
+        debugMode = cfg.isDebugMode == true,
         opacityPercent = theme.opacityPercent,
       },
       settings = {

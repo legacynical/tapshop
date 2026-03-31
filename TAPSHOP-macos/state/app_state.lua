@@ -176,7 +176,7 @@ function AppState:_recordDebugAction(fields)
     end
   end
 
-  if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
+  if self.cfg.isDebugMode and self.debugWindow and self.debugWindow.refreshIfShown then
     self.debugWindow:refreshIfShown()
   end
 end
@@ -865,9 +865,9 @@ function AppState:setPopoverOpacity(opacity)
   self:syncUi()
 end
 
-function AppState:setDebugWindow(enabled)
-  self.cfg.popoverDebugWindow = enabled == true
-  self.settingsStore.setBoolean(configModule.keys.popoverDebugWindow, self.cfg.popoverDebugWindow)
+function AppState:setDebugMode(enabled)
+  self.cfg.isDebugMode = enabled == true
+  self.settingsStore.setBoolean(configModule.keys.debugMode, self.cfg.isDebugMode)
   self:syncUi()
 end
 
@@ -1053,7 +1053,7 @@ function AppState:handleWindowEvent(event, win)
     self.popover:requestRefresh("window_event")
   end
 
-  if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
+  if self.cfg.isDebugMode and self.debugWindow and self.debugWindow.refreshIfShown then
     self.debugWindow:refreshIfShown()
   end
 end
@@ -1062,7 +1062,7 @@ function AppState:handleActiveWindowChange(win)
   if self.popover and self.popover.requestActiveWindowUpdate then
     self.popover:requestActiveWindowUpdate(win)
   end
-  if self.cfg.popoverDebugWindow and self.debugWindow and self.debugWindow.refreshIfShown then
+  if self.cfg.isDebugMode and self.debugWindow and self.debugWindow.refreshIfShown then
     self.debugWindow:refreshIfShown()
   end
 end
@@ -1103,8 +1103,8 @@ POPOVER_ACTIONS["setPopoverOpacity"] = function(self, body)
   end
 end
 
-POPOVER_ACTIONS["setDebugWindow"] = function(self, body)
-  self:setDebugWindow(tonumber(body.slot) == 1)
+POPOVER_ACTIONS["setDebugMode"] = function(self, body)
+  self:setDebugMode(tonumber(body.slot) == 1)
 end
 
 POPOVER_ACTIONS["updateHotkeyBinding"] = function(self, body)
