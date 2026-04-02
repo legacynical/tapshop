@@ -171,12 +171,6 @@ local function generalTabHtml(config)
     .. tostring(config.opacityPercent)
     .. "\" onchange=\"sendAction('setPopoverOpacity', { slot: this.value })\">\n"
     .. "              </div>\n"
-    .. "              <label class=\"settings-item\">\n"
-    .. "                <input type=\"checkbox\" "
-    .. checkedAttr(config.debugMode)
-    .. " onchange=\"sendAction('setDebugMode', { slot: this.checked ? 1 : 0 })\">\n"
-    .. "                <span>Debug</span>\n"
-    .. "              </label>\n"
     .. "            </div>\n"
 end
 

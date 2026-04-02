@@ -24,9 +24,6 @@ local function sendKeyStrokes(cfg, keys, app)
     return true
   end
 
-  if cfg.isHotkeyDebugMode then
-    hs.printf("sendKeyStrokes: unsupported key sequence: %s", tostring(keys))
-  end
   return false
 end
 

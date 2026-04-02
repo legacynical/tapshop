@@ -1,14 +1,11 @@
 local clientScript = require("ui.popover.client_script")
 local configModule = require("config")
-local debugStyles = require("ui.popover.debug_styles")
 local popoverRender = require("ui.popover.render")
 local popoverStyles = require("ui.popover.styles")
 local popoverTheme = require("ui.popover.theme")
-local Utils = require("utils")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
-local debugLog = Utils.debugLog
 
 function Popover.new(app, cfg, deps)
   local windowService = deps.windowService
@@ -194,10 +191,6 @@ function Popover.new(app, cfg, deps)
       end
     end
 
-    if cfg.isDebugMode then
-      css = css .. "\n" .. debugStyles.css
-    end
-
     return {
       css = css,
       script = clientScript.script,
@@ -208,7 +201,6 @@ function Popover.new(app, cfg, deps)
       config = {
         autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
         alwaysOnTop = cfg.popoverAlwaysOnTop == true,
-        debugMode = cfg.isDebugMode == true,
         opacityPercent = theme.opacityPercent,
       },
       settings = {
@@ -360,20 +352,6 @@ function Popover.new(app, cfg, deps)
         runtimeMaxPopoverHeight = normalizedMaxHeight
         runtimeMinUiScale = derivedMinUiScale
         runtimeMaxUiScale = maxUiScale
-        debugLog(
-          cfg,
-          "popover.bounds targetMinHeight=%s currentHeight=%s currentUiScale=%s derivedMinHeight=%s derivedMaxHeight=%s derivedMinUiScale=%s maxUiScale=%s measuredMinHeight=%s bodyShellHeight=%s workspaceListHeight=%s",
-          tostring(targetMinHeight),
-          tostring(currentHeight),
-          tostring(currentUiScale),
-          tostring(runtimeMinPopoverHeight),
-          tostring(runtimeMaxPopoverHeight),
-          tostring(runtimeMinUiScale),
-          tostring(runtimeMaxUiScale),
-          tostring(measuredMinHeight),
-          tostring(bodyShellHeight),
-          tostring(workspaceListHeight)
-        )
 
         if not isResizing then
           local frame = panelRef:getWebview():frame()
@@ -508,7 +486,9 @@ function Popover.new(app, cfg, deps)
   end
 
   function instance:warmStaticCaches()
-    cachedThemeCss = popoverStyles.buildCss(popoverTheme.buildTheme(cfg))
+    local theme = popoverTheme.buildTheme(cfg)
+    cachedThemeCss = popoverStyles.buildCss(theme)
+
     if app.warmHotkeyUiCache then
       app:warmHotkeyUiCache(popoverRender.buildHotkeysListHtml)
     end
@@ -525,14 +505,6 @@ function Popover.new(app, cfg, deps)
 
   function instance:updateActiveWindow(win)
     self:requestActiveWindowUpdate(win)
-  end
-
-  function instance:getDebugState()
-    return {
-      isShown = panel:isShown(),
-      callerWindow = windowService.getWindowInfo(callerWin),
-      activeWindow = windowService.getWindowInfo(activeWin),
-    }
   end
 
   return instance

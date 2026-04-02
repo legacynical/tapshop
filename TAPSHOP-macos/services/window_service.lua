@@ -3,9 +3,6 @@ local Utils = require("utils")
 local WindowService = {}
 local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
 
-local elapsedMs = Utils.elapsedMs
-local debugLog = Utils.debugLog
-
 local function normalizeWindowTitle(title)
   local normalized = tostring(title or ""):lower()
   normalized = normalized:gsub("%s+", " ")
@@ -159,26 +156,16 @@ function WindowService.waitForFrontmost(win, cfg)
 end
 
 function WindowService.focusOrRestore(win, cfg)
-  local startedAt = hs.timer.absoluteTime()
   if not win then
-    debugLog(cfg, "focus.verified result=missing-window durationMs=%.2f", elapsedMs(startedAt))
     return focusResult(false, "missing_window", nil)
   end
 
   if isFrontmost(win) then
-    debugLog(cfg, "focus.verified result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
     return focusResult(true, "already_frontmost", win)
   end
 
   requestFocus(win)
   local focused = WindowService.waitForFrontmost(win, cfg)
-  debugLog(
-    cfg,
-    "focus.verified result=%s windowId=%s durationMs=%.2f",
-    focused and "frontmost" or "timeout",
-    tostring(win:id()),
-    elapsedMs(startedAt)
-  )
   return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
 end
 
@@ -316,30 +303,18 @@ function WindowService.bestEffortFrontmostWindowInSpace(spaceId)
 end
 
 function WindowService.gotoSpace(spaceId, cfg)
-  local startedAt = hs.timer.absoluteTime()
   if not spaceId then
-    debugLog(cfg, "gotoSpace result=missing-space-id durationMs=%.2f", elapsedMs(startedAt))
     return { ok = false, code = "missing_space_id", spaceId = nil }
   end
   hs.spaces.gotoSpace(spaceId)
   if not WindowService.waitForSpace(spaceId, cfg) then
-    debugLog(
-      cfg,
-      "gotoSpace result=space-switch-timeout requestedSpaceId=%s activeSpaceId=%s durationMs=%.2f",
-      tostring(spaceId),
-      tostring(WindowService.currentSpaceId()),
-      elapsedMs(startedAt)
-    )
     return { ok = false, code = "space_switch_timeout", spaceId = spaceId }
   end
-  debugLog(cfg, "gotoSpace result=space-switch-verified spaceId=%s durationMs=%.2f", tostring(spaceId), elapsedMs(startedAt))
   return { ok = true, code = "space_switch_verified", spaceId = spaceId }
 end
 
 function WindowService.focusWindowAfterSpaceSwitch(win, cfg)
-  local startedAt = hs.timer.absoluteTime()
   if not win then
-    debugLog(cfg, "focusAfterSpaceSwitch result=missing-window durationMs=%.2f", elapsedMs(startedAt))
     return focusResult(false, "missing_window", nil)
   end
 
@@ -363,25 +338,20 @@ function WindowService.focusWindowAfterSpaceSwitch(win, cfg)
     end)
   end
 
-  debugLog(cfg, "focusAfterSpaceSwitch result=focus-scheduled windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
   return focusResult(true, "focus_scheduled_after_space_switch", win)
 end
 
 function WindowService.focusOrRestoreFast(win, cfg)
-  local startedAt = hs.timer.absoluteTime()
   if not win then
-    debugLog(cfg, "focus.fast result=missing-window durationMs=%.2f", elapsedMs(startedAt))
     return focusResult(false, "missing_window", nil)
   end
 
   if isFrontmost(win) then
-    debugLog(cfg, "focus.fast result=already-frontmost windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
     return focusResult(true, "already_frontmost", win)
   end
 
   requestFocus(win)
   scheduleFastFocusRetries(win)
-  debugLog(cfg, "focus.fast result=focus-requested windowId=%s durationMs=%.2f", tostring(win:id()), elapsedMs(startedAt))
   return focusResult(true, "focus_requested", win)
 end
 

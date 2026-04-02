@@ -27,7 +27,6 @@ local SpotifyService = require("services.spotify_service")
 local SystemAudioService = require("services.system_audio_service")
 local Toast = require("ui.toast")
 local Popover = require("ui.popover")
-local DebugWindow = require("ui.debug_window")
 
 local cfg = Config.load()
 local toast = Toast.new(cfg)
@@ -52,12 +51,7 @@ local popover = Popover.new(app, cfg, {
   windowService = windowService,
 })
 
-local debugWindow = DebugWindow.new(app, cfg, {
-  windowService = windowService,
-  popover = popover,
-})
-
-app:attachUi(popover, debugWindow)
+app:attachUi(popover)
 
 local windowFilter = hs.window.filter.new()
 windowFilter:subscribe({
@@ -84,16 +78,11 @@ hotkeyManager:bindAll()
 toast("TAPSHOP ready (Hammerspoon)")
 
 hs.timer.doAfter(0.10, function()
-  local ok, err = pcall(function()
-    if app.warmHotkeyUiCache then
-      app:warmHotkeyUiCache()
-    end
-    if popover.warmStaticCaches then
-      popover:warmStaticCaches()
-    end
-  end)
-  if not ok then
-    hs.printf("[tapshop-warm] background warm failed: %s", tostring(err))
+  if app.warmHotkeyUiCache then
+    app:warmHotkeyUiCache()
+  end
+  if popover.warmStaticCaches then
+    popover:warmStaticCaches()
   end
 end)
 
