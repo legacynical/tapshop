@@ -8,6 +8,12 @@ local VALID_MODS = {
   ctrl = true,
   shift = true,
 }
+local MOD_SORT_ORDER = {
+  cmd = 1,
+  alt = 2,
+  ctrl = 3,
+  shift = 4,
+}
 
 local function clampOpacityValue(value)
   local snapped = math.floor((value * 100) / 10 + 0.5) * 10
@@ -45,11 +51,18 @@ local function normalizeHotkeyMods(value)
   end
 
   table.sort(out, function(a, b)
-    local order = { cmd = 1, alt = 2, ctrl = 3, shift = 4 }
-    return order[a] < order[b]
+    return MOD_SORT_ORDER[a] < MOD_SORT_ORDER[b]
   end)
 
   return out
+end
+
+local function setTableOrClear(key, value)
+  if type(value) == "table" and next(value) ~= nil then
+    hs.settings.set(key, value)
+    return
+  end
+  hs.settings.clear(key)
 end
 
 local function normalizeOverrideEntry(rawOverride)
@@ -87,6 +100,20 @@ end
 
 function SettingsStore.setBoolean(key, value)
   hs.settings.set(key, value == true)
+end
+
+function SettingsStore.getBooleanWithLegacyKey(key, legacyKey, defaultValue)
+  local value = hs.settings.get(key)
+  if type(value) == "boolean" then
+    return value
+  end
+
+  local migrated = SettingsStore.getBoolean(legacyKey, defaultValue)
+  SettingsStore.setBoolean(key, migrated)
+  if legacyKey and legacyKey ~= "" then
+    hs.settings.clear(legacyKey)
+  end
+  return migrated
 end
 
 function SettingsStore.getOpacity(key, defaultValue)
@@ -189,7 +216,7 @@ function SettingsStore.setHotkeyOverrides(key, overrides)
     end
   end
 
-  hs.settings.set(key, payload)
+  setTableOrClear(key, payload)
 end
 
 function SettingsStore.clearSetting(key)
@@ -209,7 +236,7 @@ function SettingsStore.getWindowPairings(key)
       if type(rawPairing) == "number" then
         local windowId = normalizePositiveInteger(rawPairing)
         if windowId then
-          out[slot] = windowId
+          out[slot] = { windowId = windowId }
         end
       elseif type(rawPairing) == "table" then
         local record = Utils.buildPairingRecord(rawPairing)
@@ -237,7 +264,7 @@ function SettingsStore.setWindowPairings(key, pairings)
     end
   end
 
-  hs.settings.set(key, payload)
+  setTableOrClear(key, payload)
 end
 
 return SettingsStore

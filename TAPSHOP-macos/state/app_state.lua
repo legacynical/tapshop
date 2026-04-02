@@ -108,7 +108,8 @@ function AppState:getWorkspaceRowModels()
       if pairedWin then
         local app = pairedWin:application()
         isMinimized = pairedWin:isMinimized()
-        label = self.windowService.windowTitle(pairedWin)
+        label = (self.windowService.windowTitle and self.windowService.windowTitle(pairedWin))
+          or self.windowService.displayTitle(pairedWin)
         bundleID = app and app:bundleID() or bundleID
         appName = app and app:name() or appName
         if isMinimized then
@@ -315,19 +316,16 @@ end
 
 function AppState:_restoreWorkspacePairings()
   local pairings = self.settingsStore.getWindowPairings(configModule.keys.workspacePairings)
+  local restoredCount = 0
   for index, persisted in pairs(pairings) do
     local workspace = self:_getWorkspace(index)
     if workspace then
-      if type(persisted) == "number" then
-        local win = self.windowService.getWindowById(persisted)
-        if win then
-          self:_pairWorkspace(workspace, persisted, win)
-        end
-      elseif type(persisted) == "table" then
+      if type(persisted) == "table" then
         local windowId = persisted.windowId
         local win = self.windowService.getWindowById(windowId)
         if win then
           self:_pairWorkspace(workspace, windowId, win)
+          restoredCount = restoredCount + 1
         else
           workspace:pairWithMetadata(nil, "[empty]", {
             bundleID = persisted.bundleID,
@@ -341,6 +339,7 @@ function AppState:_restoreWorkspacePairings()
       end
     end
   end
+  return restoredCount
 end
 
 function AppState:_refreshWorkspaceDisplayTitle(workspace, win)
