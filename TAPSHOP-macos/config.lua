@@ -7,8 +7,6 @@ Config.keys = {
   popoverAutoHideAfterAction = "tapshop.popover.autoHideAfterAction",
   popoverAlwaysOnTop = "tapshop.popover.alwaysOnTop",
   popoverBackgroundOpacity = "tapshop.popover.backgroundOpacity",
-  debugMode = "tapshop.debugMode",
-  popoverDebugWindow = "tapshop.popover.debugWindow",
   popoverTopLeft = "tapshop.popover.topLeft",
   popoverSize = "tapshop.popover.size",
   workspacePairings = "tapshop.workspace.pairings",
@@ -18,8 +16,6 @@ local DEFAULTS = {
   inputDelay = 0.05,
   minimizeThreshold = 2,
   relaunchRecoveryTimeout = 11,
-  isDebugMode = false,
-  isHotkeyDebugMode = false,
   focusWaitTimeout = 0.22,
   focusPollMicros = 10000,
   youtubeDirectDispatch = true,
@@ -79,19 +75,6 @@ function Config.load()
     Config.keys.popoverBackgroundOpacity,
     DEFAULTS.popoverBackgroundOpacity
   )
-
-  local persistedDebugMode = hs.settings.get(Config.keys.debugMode)
-  if type(persistedDebugMode) == "boolean" then
-    cfg.isDebugMode = persistedDebugMode
-  else
-    local migratedDebugMode = settingsStore.getBoolean(
-      Config.keys.popoverDebugWindow,
-      DEFAULTS.isDebugMode
-    )
-    cfg.isDebugMode = migratedDebugMode
-    settingsStore.setBoolean(Config.keys.debugMode, migratedDebugMode)
-  end
-
   return cfg
 end
 

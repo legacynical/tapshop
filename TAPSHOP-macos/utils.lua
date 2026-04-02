@@ -1,15 +1,5 @@
 local Utils = {}
 
-function Utils.elapsedMs(startedAt)
-  return (hs.timer.absoluteTime() - startedAt) / 1e6
-end
-
-function Utils.debugLog(cfg, fmt, ...)
-  if cfg and cfg.isDebugMode then
-    hs.printf("[tapshop-perf] " .. fmt, ...)
-  end
-end
-
 function Utils.normalizeKey(value)
   if value == false then
     return false
