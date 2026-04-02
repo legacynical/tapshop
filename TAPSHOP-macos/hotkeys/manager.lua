@@ -87,6 +87,7 @@ end
 
 function HotkeyManager.new(app, settingsStore, settingsKey)
   local defaults = Registry.bindings()
+
   local defaultsById = {}
   for _, binding in ipairs(defaults) do
     defaultsById[binding.id] = cloneBinding(binding)
@@ -290,10 +291,12 @@ end
 
 function HotkeyManager:_buildUiState()
   self:resolve()
+  local rows = self:_buildUiRows()
+  local overrides = self:_loadOverrides()
   return {
-    rows = self:_buildUiRows(),
+    rows = rows,
     conflictsById = self.conflictsById,
-    overrides = self:_loadOverrides(),
+    overrides = overrides,
     recordingSupported = true,
   }
 end
