@@ -71,22 +71,13 @@ windowFilter:subscribe({
   hs.window.filter.windowFullscreened,
   hs.window.filter.windowUnfullscreened,
 }, function(win, _, event)
-  pcall(function()
-    app:handleWindowEvent(event, win)
-  end)
-end)
-
-local popoverWindowTracker = hs.window.filter.new()
-popoverWindowTracker:subscribe({
-  hs.window.filter.windowFocused,
-}, function(win)
-  pcall(function()
+  if event == hs.window.filter.windowFocused then
     app:handleActiveWindowChange(win)
-  end)
+  end
+  app:handleWindowEvent(event, win)
 end)
 
 app.windowFilter = windowFilter
-app.popoverWindowTracker = popoverWindowTracker
 
 hotkeyManager:bindAll()
 
