@@ -56,9 +56,19 @@ local function comboHtml(mods, key)
 end
 
 local function rowHtml(row)
-  local minBadge = row.isMinimized and '<span class="min-badge">MIN</span>' or ""
   local unpairClass = row.canUnpair and "btn btn-unpair" or "btn btn-unpair off"
-  local appIcon = icons.slotAppIconHtml(row.bundleID, row.appName)
+  local appIcon = icons.slotAppIconHtml(row.iconBundleID, row.iconAppName)
+  local badgeHtml = ""
+
+  if row.badgeText and row.badgeText ~= "" then
+    local badgeClass = "slot-badge"
+    if row.state == "minimized" then
+      badgeClass = badgeClass .. " is-minimized"
+    elseif row.state == "fullscreen" then
+      badgeClass = badgeClass .. " is-fullscreen"
+    end
+    badgeHtml = '<span class="' .. badgeClass .. '">' .. html.escape(row.badgeText) .. "</span>"
+  end
 
   return "      <div class=\"row\">\n"
     .. "        <span class=\"slot-num\">" .. tostring(row.index) .. "</span>\n"
@@ -68,7 +78,7 @@ local function rowHtml(row)
     .. html.escape(row.label)
     .. "</span>"
     .. "</span>"
-    .. minBadge
+    .. badgeHtml
     .. "</span>\n"
     .. "        <div class=\"slot-buttons\">\n"
     .. "          <button class=\"btn btn-primary\" type=\"button\" onclick=\"sendAction('pair', { slot: "

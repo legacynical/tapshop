@@ -1,4 +1,5 @@
 local Utils = require("utils")
+local SlotRecord = require("state.slot_record")
 
 local SettingsStore = {}
 
@@ -233,16 +234,9 @@ function SettingsStore.getWindowPairings(key)
   for rawSlot, rawPairing in pairs(value) do
     local slot = normalizePositiveInteger(tonumber(rawSlot))
     if slot and slot >= 1 and slot <= 9 then
-      if type(rawPairing) == "number" then
-        local windowId = normalizePositiveInteger(rawPairing)
-        if windowId then
-          out[slot] = { windowId = windowId }
-        end
-      elseif type(rawPairing) == "table" then
-        local record = Utils.buildPairingRecord(rawPairing)
-        if record then
-          out[slot] = record
-        end
+      local record = SlotRecord.normalize(rawPairing)
+      if record then
+        out[slot] = record
       end
     end
   end
@@ -256,7 +250,7 @@ function SettingsStore.setWindowPairings(key, pairings)
     for rawSlot, rawPairing in pairs(pairings) do
       local slot = normalizePositiveInteger(tonumber(rawSlot))
       if slot and slot >= 1 and slot <= 9 and type(rawPairing) == "table" then
-        local record = Utils.buildPairingRecord(rawPairing)
+        local record = SlotRecord.normalize(rawPairing)
         if record then
           payload[tostring(slot)] = record
         end

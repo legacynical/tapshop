@@ -1,7 +1,6 @@
-local Utils = require("utils")
-
 local WindowService = {}
-local FAST_FOCUS_RETRY_DELAYS = { 0.02, 0.06 }
+local pendingFocusTimer = nil
+local pendingFocusSerial = 0
 
 local function normalizeWindowTitle(title)
   local normalized = tostring(title or ""):lower()
@@ -27,32 +26,44 @@ local function isFrontmost(win)
   return frontmost and frontmost:id() == win:id() or false
 end
 
+local function stopPendingFocusTimer()
+  if pendingFocusTimer then
+    pendingFocusTimer:stop()
+    pendingFocusTimer = nil
+  end
+end
+
+local function invalidatePendingFocus()
+  pendingFocusSerial = pendingFocusSerial + 1
+  stopPendingFocusTimer()
+  return pendingFocusSerial
+end
+
 local function requestFocus(win)
   local app = win:application()
   if app and app:isHidden() then
     app:unhide()
   end
-  if app then
-    app:activate(true)
-  end
   if win:isMinimized() then
     win:unminimize()
   end
 
+  -- hs.window:focus() already makes the app frontmost and the target window main.
   win:focus()
 end
 
-local function scheduleFastFocusRetries(win)
-  for _, delay in ipairs(FAST_FOCUS_RETRY_DELAYS) do
-    hs.timer.doAfter(delay, function()
-      pcall(function()
-        if not win or isFrontmost(win) then
-          return
-        end
-        requestFocus(win)
-      end)
-    end)
+local function focusOrRestoreImpl(win, cfg)
+  if not win then
+    return focusResult(false, "missing_window", nil)
   end
+
+  if isFrontmost(win) then
+    return focusResult(true, "already_frontmost", win)
+  end
+
+  requestFocus(win)
+  local focused = WindowService.waitForFrontmost(win, cfg)
+  return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
 end
 
 function WindowService.getWindowInfo(win)
@@ -156,17 +167,8 @@ function WindowService.waitForFrontmost(win, cfg)
 end
 
 function WindowService.focusOrRestore(win, cfg)
-  if not win then
-    return focusResult(false, "missing_window", nil)
-  end
-
-  if isFrontmost(win) then
-    return focusResult(true, "already_frontmost", win)
-  end
-
-  requestFocus(win)
-  local focused = WindowService.waitForFrontmost(win, cfg)
-  return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
+  invalidatePendingFocus()
+  return focusOrRestoreImpl(win, cfg)
 end
 
 function WindowService.focusedSpaceId()
@@ -310,6 +312,9 @@ function WindowService.gotoSpace(spaceId, cfg)
   if not WindowService.waitForSpace(spaceId, cfg) then
     return { ok = false, code = "space_switch_timeout", spaceId = spaceId }
   end
+  if hs.spaces and type(hs.spaces.closeMissionControl) == "function" then
+    pcall(hs.spaces.closeMissionControl)
+  end
   return { ok = true, code = "space_switch_verified", spaceId = spaceId }
 end
 
@@ -319,40 +324,27 @@ function WindowService.focusWindowAfterSpaceSwitch(win, cfg)
   end
 
   local initialDelay = cfg.fullscreenSpaceSwitchDelay or 0.20
-  local retries = cfg.fullscreenPostSwitchFocusRetries or { 0.02, 0.06 }
+  local token = invalidatePendingFocus()
 
-  hs.timer.doAfter(initialDelay, function()
+  pendingFocusTimer = hs.timer.doAfter(initialDelay, function()
+    pendingFocusTimer = nil
     pcall(function()
-      requestFocus(win)
+      if token ~= pendingFocusSerial then
+        return
+      end
+      focusOrRestoreImpl(win, cfg)
     end)
   end)
-
-  for _, retryOffset in ipairs(retries) do
-    hs.timer.doAfter(initialDelay + retryOffset, function()
-      pcall(function()
-        if not win or isFrontmost(win) then
-          return
-        end
-        requestFocus(win)
-      end)
-    end)
-  end
 
   return focusResult(true, "focus_scheduled_after_space_switch", win)
 end
 
 function WindowService.focusOrRestoreFast(win, cfg)
-  if not win then
-    return focusResult(false, "missing_window", nil)
-  end
+  return WindowService.focusOrRestore(win, cfg)
+end
 
-  if isFrontmost(win) then
-    return focusResult(true, "already_frontmost", win)
-  end
-
-  requestFocus(win)
-  scheduleFastFocusRetries(win)
-  return focusResult(true, "focus_requested", win)
+function WindowService.cancelPendingFocus()
+  invalidatePendingFocus()
 end
 
 return WindowService

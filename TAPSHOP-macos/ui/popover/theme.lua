@@ -43,7 +43,7 @@ function Theme.buildTheme(cfg)
       headerActionWidth = "30px",
       headerActionHeight = "26px",
       headerIconSize = "14px",
-      configPanelMinWidth = "245px",
+      configPanelMinWidth = "180px",
       configPanelMaxWidthInset = "24px",
     },
     radius = {

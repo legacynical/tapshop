@@ -32,7 +32,7 @@ function Popover.new(app, cfg, deps)
 
   local POP_W = 500
   local POP_H = 273
-  local POP_MIN_W = 300
+  local POP_MIN_W = 200
   local TARGET_MIN_POPOVER_HEIGHT = 150
   local BOOTSTRAP_MAX_POPOVER_HEIGHT = 398
   local POP_SCREEN_MARGIN = 32
