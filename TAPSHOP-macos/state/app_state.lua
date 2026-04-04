@@ -84,8 +84,8 @@ function AppState:syncUi()
 end
 
 function AppState:_runPairingAction(actionFn)
-  if self.windowService and self.windowService.cancelPendingFocus then
-    self.windowService.cancelPendingFocus()
+  if self.windowService and self.windowService.cancelPendingFrontmostRequest then
+    self.windowService.cancelPendingFrontmostRequest()
   end
   actionFn()
   self:_persistWorkspacePairings()
@@ -96,8 +96,8 @@ function AppState:_runPairingAction(actionFn)
 end
 
 function AppState:_runWorkspaceAction(actionFn)
-  if self.windowService and self.windowService.cancelPendingFocus then
-    self.windowService.cancelPendingFocus()
+  if self.windowService and self.windowService.cancelPendingFrontmostRequest then
+    self.windowService.cancelPendingFrontmostRequest()
   end
   actionFn()
   self:syncUi()
@@ -446,12 +446,8 @@ function AppState:_activateResolvedPairedWindow(workspace, paired, focusedSpaceI
         workspace:setBaseSpaceId(resolvedSpaceId)
       end
       self:_refreshWorkspaceFingerprint(workspace, paired)
-      local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
-      return {
-        focusCode = focusResult.code,
-        result = focusResult.code,
-        activationPath = "base-window",
-      }
+      self.windowService.requestFrontmost(paired)
+      return "base-window"
     end
 
     if targetSpaceId then
@@ -459,29 +455,17 @@ function AppState:_activateResolvedPairedWindow(workspace, paired, focusedSpaceI
       if switchResult.ok then
         workspace:setBaseSpaceId(targetSpaceId)
         self:_refreshWorkspaceFingerprint(workspace, paired)
-        local focusResult = self.windowService.focusWindowAfterSpaceSwitch(paired, self.cfg)
-        return {
-          focusCode = focusResult.code,
-          result = focusResult.code,
-          activationPath = "base-window-space-switch",
-        }
+        self.windowService.requestFrontmostAfterSpaceSwitch(paired, self.cfg)
+        return "base-window-space-switch"
       end
 
-      return {
-        focusCode = nil,
-        result = switchResult.code or "space_switch_failed",
-        activationPath = "base-window-space-switch-failed",
-      }
+      return nil
     end
   end
 
   self:_refreshWorkspaceFingerprint(workspace, paired)
-  local focusResult = self.windowService.focusOrRestoreFast(paired, self.cfg)
-  return {
-    focusCode = focusResult.code,
-    result = focusResult.code,
-    activationPath = "base-window",
-  }
+  self.windowService.requestFrontmost(paired)
+  return "base-window"
 end
 
 function AppState:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId)
@@ -519,12 +503,8 @@ function AppState:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId)
   )
   workspace:setBaseSpaceId(targetSpaceId)
   self:_refreshWorkspaceFingerprint(workspace, resolved)
-  local focusResult = self.windowService.focusWindowAfterSpaceSwitch(resolved, self.cfg)
-  return {
-    focusCode = focusResult.code,
-    result = focusResult.code,
-    activationPath = "base-window-id-space-switch",
-  }
+  self.windowService.requestFrontmostAfterSpaceSwitch(resolved, self.cfg)
+  return "base-window-id-space-switch"
 end
 
 function AppState:_isWindowAlreadyPaired(windowId)
@@ -690,7 +670,7 @@ function AppState:activateSlot(index)
                 fullscreenSpaceId = resolvedFullscreenSpaceId,
                 lastKnownSpaceId = workspace:getBaseSpaceId(),
               })
-              self.windowService.focusOrRestoreFast(fullscreenWin, self.cfg)
+              self.windowService.requestFrontmost(fullscreenWin)
               self:_refreshWorkspaceFingerprint(workspace, fullscreenWin)
               return
             end
@@ -704,7 +684,7 @@ function AppState:activateSlot(index)
                   fullscreenSpaceId = resolvedFullscreenSpaceId,
                   lastKnownSpaceId = workspace:getBaseSpaceId(),
                 })
-                self.windowService.focusWindowAfterSpaceSwitch(fullscreenWin, self.cfg)
+                self.windowService.requestFrontmostAfterSpaceSwitch(fullscreenWin, self.cfg)
                 self:_refreshWorkspaceFingerprint(workspace, fullscreenWin)
                 return
               end

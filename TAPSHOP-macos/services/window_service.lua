@@ -1,6 +1,6 @@
 local WindowService = {}
-local pendingFocusTimer = nil
-local pendingFocusSerial = 0
+local pendingFrontmostTimer = nil
+local pendingFrontmostSerial = 0
 
 local function normalizeWindowTitle(title)
   local normalized = tostring(title or ""):lower()
@@ -26,20 +26,20 @@ local function isFrontmost(win)
   return frontmost and frontmost:id() == win:id() or false
 end
 
-local function stopPendingFocusTimer()
-  if pendingFocusTimer then
-    pendingFocusTimer:stop()
-    pendingFocusTimer = nil
+local function stopPendingFrontmostTimer()
+  if pendingFrontmostTimer then
+    pendingFrontmostTimer:stop()
+    pendingFrontmostTimer = nil
   end
 end
 
-local function invalidatePendingFocus()
-  pendingFocusSerial = pendingFocusSerial + 1
-  stopPendingFocusTimer()
-  return pendingFocusSerial
+local function invalidatePendingFrontmostRequest()
+  pendingFrontmostSerial = pendingFrontmostSerial + 1
+  stopPendingFrontmostTimer()
+  return pendingFrontmostSerial
 end
 
-local function requestFocus(win)
+local function requestFrontmostImpl(win)
   local app = win:application()
   if app and app:isHidden() then
     app:unhide()
@@ -52,7 +52,7 @@ local function requestFocus(win)
   win:focus()
 end
 
-local function focusOrRestoreImpl(win, cfg)
+local function ensureFrontmostImpl(win, cfg)
   if not win then
     return focusResult(false, "missing_window", nil)
   end
@@ -61,7 +61,7 @@ local function focusOrRestoreImpl(win, cfg)
     return focusResult(true, "already_frontmost", win)
   end
 
-  requestFocus(win)
+  requestFrontmostImpl(win)
   local focused = WindowService.waitForFrontmost(win, cfg)
   return focusResult(focused, focused and "focus_verified" or "focus_timeout", win)
 end
@@ -166,9 +166,26 @@ function WindowService.waitForFrontmost(win, cfg)
   return false
 end
 
-function WindowService.focusOrRestore(win, cfg)
-  invalidatePendingFocus()
-  return focusOrRestoreImpl(win, cfg)
+-- Request frontmost status opportunistically for slot-style flows.
+-- This path should not block the hotkey/UI loop on verification.
+function WindowService.requestFrontmost(win)
+  invalidatePendingFrontmostRequest()
+  if not win then
+    return focusResult(false, "missing_window", nil)
+  end
+
+  if isFrontmost(win) then
+    return focusResult(true, "already_frontmost", win)
+  end
+
+  requestFrontmostImpl(win)
+  return focusResult(true, "focus_requested", win)
+end
+
+-- Use verified focus only when subsequent input depends on confirmation.
+function WindowService.ensureFrontmost(win, cfg)
+  invalidatePendingFrontmostRequest()
+  return ensureFrontmostImpl(win, cfg)
 end
 
 function WindowService.focusedSpaceId()
@@ -318,33 +335,30 @@ function WindowService.gotoSpace(spaceId, cfg)
   return { ok = true, code = "space_switch_verified", spaceId = spaceId }
 end
 
-function WindowService.focusWindowAfterSpaceSwitch(win, cfg)
+-- After a Space switch, request focus on the next loop turn once the desktop settles.
+function WindowService.requestFrontmostAfterSpaceSwitch(win, cfg)
   if not win then
     return focusResult(false, "missing_window", nil)
   end
 
   local initialDelay = cfg.fullscreenSpaceSwitchDelay or 0.20
-  local token = invalidatePendingFocus()
+  local token = invalidatePendingFrontmostRequest()
 
-  pendingFocusTimer = hs.timer.doAfter(initialDelay, function()
-    pendingFocusTimer = nil
+  pendingFrontmostTimer = hs.timer.doAfter(initialDelay, function()
+    pendingFrontmostTimer = nil
     pcall(function()
-      if token ~= pendingFocusSerial then
+      if token ~= pendingFrontmostSerial then
         return
       end
-      focusOrRestoreImpl(win, cfg)
+      requestFrontmostImpl(win)
     end)
   end)
 
-  return focusResult(true, "focus_scheduled_after_space_switch", win)
+  return focusResult(true, "focus_requested_after_space_switch", win)
 end
 
-function WindowService.focusOrRestoreFast(win, cfg)
-  return WindowService.focusOrRestore(win, cfg)
-end
-
-function WindowService.cancelPendingFocus()
-  invalidatePendingFocus()
+function WindowService.cancelPendingFrontmostRequest()
+  invalidatePendingFrontmostRequest()
 end
 
 return WindowService

@@ -125,7 +125,7 @@ function YoutubeService:sendCommand(keyPress)
   end
 
   local previousWindow = hs.window.frontmostWindow()
-  local focusResult = self.windowService.focusOrRestore(target, self.cfg)
+  local focusResult = self.windowService.ensureFrontmost(target, self.cfg)
   if not focusResult.ok then
     self.toast("Focus failed for YT window")
     return {
@@ -139,7 +139,7 @@ function YoutubeService:sendCommand(keyPress)
   sendKeyStrokes(self.cfg, keyPress, nil)
 
   if previousWindow and previousWindow:id() ~= target:id() then
-    self.windowService.focusOrRestore(previousWindow, self.cfg)
+    self.windowService.ensureFrontmost(previousWindow, self.cfg)
   end
 
   return {
