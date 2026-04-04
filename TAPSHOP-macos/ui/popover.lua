@@ -201,6 +201,7 @@ function Popover.new(app, cfg, deps)
       config = {
         autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
         alwaysOnTop = cfg.popoverAlwaysOnTop == true,
+        hidePairButtons = cfg.popoverHidePairButtons == true,
         opacityPercent = theme.opacityPercent,
       },
       settings = {

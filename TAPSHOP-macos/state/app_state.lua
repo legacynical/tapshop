@@ -776,6 +776,12 @@ function AppState:setPopoverAlwaysOnTop(enabled)
   self:syncUi()
 end
 
+function AppState:setPopoverHidePairButtons(enabled)
+  self.cfg.popoverHidePairButtons = enabled == true
+  self.settingsStore.setBoolean(configModule.keys.popoverHidePairButtons, self.cfg.popoverHidePairButtons)
+  self:syncUi()
+end
+
 function AppState:setPopoverOpacity(opacity)
   local normalized = opacity > 1 and (opacity / 100) or opacity
   self.cfg.popoverBackgroundOpacity = self.settingsStore.setOpacity(
@@ -1005,6 +1011,10 @@ end
 
 POPOVER_ACTIONS["setAlwaysOnTop"] = function(self, body)
   self:setPopoverAlwaysOnTop(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["setHidePairButtons"] = function(self, body)
+  self:setPopoverHidePairButtons(tonumber(body.slot) == 1)
 end
 
 POPOVER_ACTIONS["setPopoverOpacity"] = function(self, body)

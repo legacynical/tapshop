@@ -55,10 +55,13 @@ local function comboHtml(mods, key)
   return table.concat(parts)
 end
 
-local function rowHtml(row)
+local function rowHtml(row, config)
+  config = config or {}
+  local hidePairButtons = config.hidePairButtons == true
   local unpairClass = row.canUnpair and "btn btn-unpair" or "btn btn-unpair off"
   local appIcon = icons.slotAppIconHtml(row.iconBundleID, row.iconAppName)
   local badgeHtml = ""
+  local buttonsHtml = ""
 
   if row.badgeText and row.badgeText ~= "" then
     local badgeClass = "slot-badge"
@@ -68,6 +71,19 @@ local function rowHtml(row)
       badgeClass = badgeClass .. " is-fullscreen"
     end
     badgeHtml = '<span class="' .. badgeClass .. '">' .. html.escape(row.badgeText) .. "</span>"
+  end
+
+  if not hidePairButtons then
+    buttonsHtml = "        <div class=\"slot-buttons\">\n"
+      .. "          <button class=\"btn btn-primary\" type=\"button\" onclick=\"sendAction('pair', { slot: "
+      .. tostring(row.index)
+      .. " })\">Pair</button>\n"
+      .. "          <button class=\""
+      .. unpairClass
+      .. "\" type=\"button\" onclick=\"sendAction('unpair', { slot: "
+      .. tostring(row.index)
+      .. " })\">Unpair</button>\n"
+      .. "        </div>\n"
   end
 
   return "      <div class=\"row\">\n"
@@ -80,16 +96,7 @@ local function rowHtml(row)
     .. "</span>"
     .. badgeHtml
     .. "</span>\n"
-    .. "        <div class=\"slot-buttons\">\n"
-    .. "          <button class=\"btn btn-primary\" type=\"button\" onclick=\"sendAction('pair', { slot: "
-    .. tostring(row.index)
-    .. " })\">Pair</button>\n"
-    .. "          <button class=\""
-    .. unpairClass
-    .. "\" type=\"button\" onclick=\"sendAction('unpair', { slot: "
-    .. tostring(row.index)
-    .. " })\">Unpair</button>\n"
-    .. "        </div>\n"
+    .. buttonsHtml
     .. "      </div>\n"
 end
 
@@ -174,6 +181,12 @@ local function generalTabHtml(config)
     .. checkedAttr(config.alwaysOnTop)
     .. " onchange=\"sendAction('setAlwaysOnTop', { slot: this.checked ? 1 : 0 })\">\n"
     .. "                <span>Always on top</span>\n"
+    .. "              </label>\n"
+    .. "              <label class=\"settings-item\">\n"
+    .. "                <input type=\"checkbox\" "
+    .. checkedAttr(config.hidePairButtons)
+    .. " onchange=\"sendAction('setHidePairButtons', { slot: this.checked ? 1 : 0 })\">\n"
+    .. "                <span>Hide pair/unpair buttons</span>\n"
     .. "              </label>\n"
     .. "              <div class=\"settings-slider-block\">\n"
     .. "                <div class=\"settings-slider-label\">Background opacity</div>\n"
@@ -303,7 +316,7 @@ function Render.buildHtml(ctx)
   }
 
   for _, row in ipairs(ctx.rows) do
-    parts[#parts + 1] = rowHtml(row)
+    parts[#parts + 1] = rowHtml(row, ctx.config)
   end
 
   parts[#parts + 1] = "      </div>\n"

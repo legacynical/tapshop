@@ -6,6 +6,7 @@ Config.keys = {
   hotkeyOverrides = "tapshop.hotkeys.overrides",
   popoverAutoHideAfterAction = "tapshop.popover.autoHideAfterAction",
   popoverAlwaysOnTop = "tapshop.popover.alwaysOnTop",
+  popoverHidePairButtons = "tapshop.popover.hidePairButtons",
   popoverBackgroundOpacity = "tapshop.popover.backgroundOpacity",
   popoverTopLeft = "tapshop.popover.topLeft",
   popoverSize = "tapshop.popover.size",
@@ -21,6 +22,7 @@ local DEFAULTS = {
   youtubeDirectDispatch = true,
   popoverAutoHideAfterAction = false,
   popoverAlwaysOnTop = true,
+  popoverHidePairButtons = false,
   popoverBackgroundOpacity = 0.85,
   tapshopMsgBottomMargin = 100,
   tapshopMsgWidth = 760,
@@ -70,6 +72,10 @@ function Config.load()
   cfg.popoverAlwaysOnTop = settingsStore.getBoolean(
     Config.keys.popoverAlwaysOnTop,
     DEFAULTS.popoverAlwaysOnTop
+  )
+  cfg.popoverHidePairButtons = settingsStore.getBoolean(
+    Config.keys.popoverHidePairButtons,
+    DEFAULTS.popoverHidePairButtons
   )
   cfg.popoverBackgroundOpacity = settingsStore.getOpacity(
     Config.keys.popoverBackgroundOpacity,
