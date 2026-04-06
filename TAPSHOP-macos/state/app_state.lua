@@ -288,7 +288,6 @@ end
 
 function AppState:_restoreWorkspacePairings()
   local pairings = self.settingsStore.getWindowPairings(configModule.keys.workspacePairings)
-  local now = hs.timer.secondsSinceEpoch()
   local restoredCount = 0
   for index, persisted in pairs(pairings) do
     local workspace = self:_getWorkspace(index)
@@ -299,9 +298,10 @@ function AppState:_restoreWorkspacePairings()
             restoredCount = restoredCount + 1
           end
         elseif persisted.kind == "recoverable" then
-          workspace:setRecoverable(persisted.fingerprint, persisted.recovery and persisted.recovery.closedAt or nil)
-          if not workspace:canRecover(now, self.cfg.relaunchRecoveryTimeout) then
-            workspace:clearRecoveryTracking()
+          if self.cfg.recoverClosedWindows then
+            workspace:setRecoverable(persisted.fingerprint, persisted.recovery and persisted.recovery.closedAt or nil)
+          else
+            workspace:clear()
           end
         else
           workspace:clear()
@@ -516,21 +516,11 @@ function AppState:_isWindowAlreadyPaired(windowId)
   return false
 end
 
-function AppState:_expireRecoveryTracking(now)
-  local changed = false
-  for _, workspace in ipairs(self.workspaces) do
-    if workspace:getRecoveryClosedAt() and not workspace:canRecover(now, self.cfg.relaunchRecoveryTimeout) then
-      workspace:clearRecoveryTracking()
-      changed = true
-    end
+function AppState:_restoreWorkspaceFromCandidate(win)
+  if not self.cfg.recoverClosedWindows then
+    return false
   end
-  if changed then
-    self:_persistWorkspacePairings()
-  end
-  return changed
-end
 
-function AppState:_restoreWorkspaceFromCandidate(win, now)
   if not self.windowService.isCandidateWindow or not self.windowService.isCandidateWindow(win) then
     return false
   end
@@ -542,7 +532,7 @@ function AppState:_restoreWorkspaceFromCandidate(win, now)
   end
 
   for _, workspace in ipairs(self.workspaces) do
-    if workspace:canRecover(now, self.cfg.relaunchRecoveryTimeout)
+    if workspace:canRecover()
       and workspace:matchesRecoveryCandidate(candidateMeta) then
       self:_pairWorkspace(workspace, candidateId, win)
       self:_persistWorkspacePairings()
@@ -560,11 +550,14 @@ function AppState:_restoreWorkspaceFromCandidate(win, now)
 end
 
 function AppState:_formatPairToast(workspace, win)
-  local label = self.windowService.displayTitle(win)
+  local app = win and win:application() or nil
+  local label = self.windowService.windowTitle and self.windowService.windowTitle(win) or self.windowService.displayTitle(win)
   if label == "[empty]" then
     return string.format("[Pairing %s]", workspace:getName())
   end
   return {
+    imageBundleID = app and app:bundleID() or nil,
+    imageAppName = app and app:name() or nil,
     segments = {
       { text = string.format("Pairing %s: ", workspace:getName()), color = TOAST_WHITE },
       { text = label, color = PAIR_TOAST_COLOR },
@@ -573,16 +566,43 @@ function AppState:_formatPairToast(workspace, win)
 end
 
 function AppState:_formatUnpairToast(workspace, win)
-  local label = self.windowService.displayTitle(win)
+  local app = win and win:application() or nil
+  local fingerprint = workspace and workspace:getFingerprint() or {}
+  local label = self.windowService.windowTitle and self.windowService.windowTitle(win) or self.windowService.displayTitle(win)
   if label == "[empty]" then
-    label = workspace:getStoredDisplayTitle()
+    label = workspace:getStoredWindowTitle()
   end
   return {
+    imageBundleID = app and app:bundleID() or fingerprint.bundleID or nil,
+    imageAppName = app and app:name() or fingerprint.appName or nil,
     segments = {
       { text = string.format("Unpairing %s: ", workspace:getName()), color = TOAST_WHITE },
       { text = label, color = UNPAIR_TOAST_COLOR },
     },
   }
+end
+
+function AppState:_formatClosedWindowUnpairToast(workspace)
+  return {
+    imageBundleID = workspace and workspace:getFingerprint() and workspace:getFingerprint().bundleID or nil,
+    imageAppName = workspace and workspace:getFingerprint() and workspace:getFingerprint().appName or nil,
+    segments = {
+      { text = "[Unpaired Closed Window: ", color = TOAST_WHITE },
+      { text = workspace and workspace:getStoredWindowTitle() or "[empty]", color = UNPAIR_TOAST_COLOR },
+      { text = "]", color = TOAST_WHITE },
+    },
+  }
+end
+
+function AppState:_clearRecoverableWorkspaces()
+  local changed = false
+  for _, workspace in ipairs(self.workspaces) do
+    if workspace:isRecoverable() then
+      workspace:clear()
+      changed = true
+    end
+  end
+  return changed
 end
 
 function AppState:_clearWorkspaceAndPersist(workspace)
@@ -732,7 +752,7 @@ function AppState:unpairSlot(index)
   end
 
   self:_runPairingAction(function()
-    if workspace:isPaired() then
+    if workspace:isPaired() or workspace:isRecoverable() then
       local win = self:_resolvePairedWindow(workspace)
       local toastPayload = self:_formatUnpairToast(workspace, win)
       workspace:clear()
@@ -871,6 +891,7 @@ function AppState:handleWindowEvent(event, win)
 
     local basePairingChanged = false
     local fullscreenStateChanged = false
+    local closedWindowToast = nil
     for _, workspace in ipairs(self.workspaces) do
       if workspace:getFullscreenTargetWindowId() == deadId and workspace:getBaseWindowId() ~= deadId then
         workspace:clearFullscreenState()
@@ -888,7 +909,12 @@ function AppState:handleWindowEvent(event, win)
           fullscreenStateChanged = true
           goto continue_window_destroy
         end
-        workspace:markClosedForRecovery(hs.timer.secondsSinceEpoch())
+        if self.cfg.recoverClosedWindows then
+          workspace:markClosedForRecovery(hs.timer.secondsSinceEpoch())
+        else
+          closedWindowToast = self:_formatClosedWindowUnpairToast(workspace)
+          workspace:clear()
+        end
         basePairingChanged = true
       end
       ::continue_window_destroy::
@@ -896,7 +922,9 @@ function AppState:handleWindowEvent(event, win)
 
     if basePairingChanged then
       self:_persistWorkspacePairings()
-      self.toast("[Cleared pairing: window closed]")
+      if closedWindowToast then
+        self.toast(closedWindowToast)
+      end
       self:syncUi()
     elseif fullscreenStateChanged then
       self:_persistWorkspacePairings()
@@ -953,17 +981,15 @@ function AppState:handleWindowEvent(event, win)
     return
   end
 
-  local now = hs.timer.secondsSinceEpoch()
-  local recoveryStateChanged = self:_expireRecoveryTracking(now)
   local restored = false
   if win then
-    restored = self:_restoreWorkspaceFromCandidate(win, now)
+    restored = self:_restoreWorkspaceFromCandidate(win)
   end
 
   local pairedWorkspaceTouched = self:_refreshPairedWorkspaceMetadataForWindow(win)
   self.youtubeService:handleWindowCandidate(win)
 
-  local shouldRefreshPopover = event == hs.window.filter.windowFocused or pairedWorkspaceTouched or recoveryStateChanged or restored
+  local shouldRefreshPopover = event == hs.window.filter.windowFocused or pairedWorkspaceTouched or restored
   if win then
     local frontmost = hs.window.frontmostWindow()
     if frontmost and frontmost:id() == win:id() then

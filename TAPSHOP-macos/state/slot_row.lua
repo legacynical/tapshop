@@ -5,31 +5,43 @@ local APPEARANCE = {
     className = "unpaired",
     badgeText = nil,
     showIcon = false,
+    muteIcon = false,
   },
   paired = {
     className = "paired",
     badgeText = nil,
     showIcon = true,
+    muteIcon = false,
   },
   minimized = {
     className = "paired-minimized",
     badgeText = "MIN",
     showIcon = true,
+    muteIcon = false,
   },
   fullscreen = {
     className = "paired-fullscreen",
     badgeText = "FULL",
     showIcon = true,
+    muteIcon = false,
   },
   off_space = {
     className = "paired-off-space",
     badgeText = nil,
     showIcon = true,
+    muteIcon = false,
   },
   unresolved = {
     className = "paired-unresolved",
     badgeText = nil,
     showIcon = true,
+    muteIcon = false,
+  },
+  recoverable = {
+    className = "recoverable",
+    badgeText = nil,
+    showIcon = true,
+    muteIcon = true,
   },
 }
 
@@ -102,6 +114,11 @@ function SlotRow.build(slot, session, deps)
         iconAppName = fingerprint.appName
       end
     end
+  elseif bindingKind == "recoverable" then
+    state = "recoverable"
+    label = slot:getStoredWindowTitle()
+    iconBundleID = fingerprint.bundleID
+    iconAppName = fingerprint.appName
   end
 
   local appearance = APPEARANCE[state] or APPEARANCE.empty
@@ -115,9 +132,10 @@ function SlotRow.build(slot, session, deps)
     label = label,
     state = state,
     canPair = true,
-    canUnpair = bindingKind == "paired",
+    canUnpair = bindingKind == "paired" or bindingKind == "recoverable",
     iconBundleID = iconBundleID,
     iconAppName = iconAppName,
+    iconMuted = appearance.muteIcon == true,
     badgeText = appearance.badgeText,
     className = appearance.className,
   }

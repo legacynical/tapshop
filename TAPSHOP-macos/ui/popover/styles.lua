@@ -334,6 +334,11 @@ input {
   flex-shrink: 0;
 }
 
+.slot-app-icon.is-muted {
+  filter: grayscale(1) saturate(0);
+  opacity: 0.68;
+}
+
 .slot-text {
   min-width: 0;
   overflow: hidden;
@@ -413,6 +418,7 @@ input {
 .paired-fullscreen { color: #78d7ff; }
 .paired-off-space { color: #f0f0f0; }
 .paired-unresolved { color: #ff7a7a; }
+.recoverable { color: #555; }
 .unpaired { color: #555; font-style: italic; }
 
 .settings-sheet {

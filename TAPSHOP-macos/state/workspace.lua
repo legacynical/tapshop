@@ -152,23 +152,13 @@ function Workspace:clearRecoveryTracking()
   end
 end
 
-function Workspace:canRecover(now, timeoutSec)
+function Workspace:canRecover()
   local fingerprint = self.binding.fingerprint
-  local closedAt = self.binding.recovery.closedAt
 
   if self.binding.kind ~= "recoverable" then
     return false
   end
-  if not fingerprint.bundleID or not fingerprint.titleNormalized or not closedAt then
-    return false
-  end
-  if type(now) ~= "number" or type(timeoutSec) ~= "number" then
-    return false
-  end
-  if now < closedAt then
-    return false
-  end
-  return (now - closedAt) <= timeoutSec
+  return fingerprint.bundleID ~= nil and fingerprint.titleNormalized ~= nil
 end
 
 function Workspace:matchesRecoveryCandidate(candidateMeta)

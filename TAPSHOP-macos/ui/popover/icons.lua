@@ -89,8 +89,8 @@ function Icons.appIconHtml(bundleID, appName, className, size)
     .. '">'
 end
 
-function Icons.slotAppIconHtml(bundleID, appName)
-  return Icons.appIconHtml(bundleID, appName, "slot-app-icon", 18)
+function Icons.slotAppIconHtml(bundleID, appName, className)
+  return Icons.appIconHtml(bundleID, appName, className or "slot-app-icon", 18)
 end
 
 return Icons

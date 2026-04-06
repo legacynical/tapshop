@@ -7,8 +7,13 @@ Config.keys = {
   popoverAutoHideAfterAction = "tapshop.popover.autoHideAfterAction",
   popoverAlwaysOnTop = "tapshop.popover.alwaysOnTop",
   popoverHidePairButtons = "tapshop.popover.hidePairButtons",
+  recoverClosedWindows = "tapshop.workspace.recoverClosedWindows",
   popoverBackgroundOpacity = "tapshop.popover.backgroundOpacity",
   popoverTopLeft = "tapshop.popover.topLeft",
+  popoverMainSize = "tapshop.popover.mainSize",
+  settingsTopLeft = "tapshop.settings.topLeft",
+  settingsSize = "tapshop.settings.size",
+  popoverSettingsSize = "tapshop.popover.settingsSize",
   popoverSize = "tapshop.popover.size",
   workspacePairings = "tapshop.workspace.pairings",
 }
@@ -16,13 +21,13 @@ Config.keys = {
 local DEFAULTS = {
   inputDelay = 0.05,
   minimizeThreshold = 2,
-  relaunchRecoveryTimeout = 11,
   focusWaitTimeout = 0.22,
   focusPollMicros = 10000,
   youtubeDirectDispatch = true,
   popoverAutoHideAfterAction = false,
   popoverAlwaysOnTop = true,
   popoverHidePairButtons = false,
+  recoverClosedWindows = true,
   popoverBackgroundOpacity = 0.85,
   tapshopMsgBottomMargin = 100,
   tapshopMsgWidth = 760,
@@ -76,6 +81,10 @@ function Config.load()
   cfg.popoverHidePairButtons = settingsStore.getBoolean(
     Config.keys.popoverHidePairButtons,
     DEFAULTS.popoverHidePairButtons
+  )
+  cfg.recoverClosedWindows = settingsStore.getBoolean(
+    Config.keys.recoverClosedWindows,
+    DEFAULTS.recoverClosedWindows
   )
   cfg.popoverBackgroundOpacity = settingsStore.getOpacity(
     Config.keys.popoverBackgroundOpacity,
