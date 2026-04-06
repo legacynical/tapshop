@@ -31,21 +31,6 @@ local function normalizeFingerprint(raw)
   return next(fingerprint) ~= nil and fingerprint or nil
 end
 
-local function normalizeRecovery(raw)
-  if type(raw) ~= "table" then
-    return nil
-  end
-
-  local closedAt = type(raw.closedAt) == "number" and raw.closedAt or nil
-  if closedAt == nil then
-    return nil
-  end
-
-  return {
-    closedAt = closedAt,
-  }
-end
-
 local function normalizeFullscreenTarget(raw)
   if type(raw) ~= "table" then
     return nil
@@ -90,7 +75,6 @@ local function normalizeV2Record(raw)
   end
 
   local fingerprint = normalizeFingerprint(raw.fingerprint)
-  local recovery = normalizeRecovery(raw.recovery)
   local record = {
     version = 2,
     kind = kind,
@@ -116,12 +100,11 @@ local function normalizeV2Record(raw)
     return record
   end
 
-  if not fingerprint or not fingerprint.bundleID or not fingerprint.titleNormalized or not recovery then
+  if not fingerprint or not fingerprint.bundleID or not fingerprint.titleNormalized then
     return nil
   end
 
   record.fingerprint = fingerprint
-  record.recovery = recovery
   return record
 end
 
@@ -144,7 +127,7 @@ local function normalizeLegacyRecord(raw)
 
   local baseWindowId = positiveInt(raw.baseWindowId or raw.windowId)
   local fingerprint = normalizeFingerprint(raw)
-  local recovery = type(raw.closedAt) == "number" and { closedAt = raw.closedAt } or nil
+  local hasRecoveryMarker = type(raw.closedAt) == "number"
 
   if baseWindowId then
     local record = {
@@ -166,12 +149,11 @@ local function normalizeLegacyRecord(raw)
     return record
   end
 
-  if fingerprint and fingerprint.bundleID and fingerprint.titleNormalized and recovery then
+  if fingerprint and fingerprint.bundleID and fingerprint.titleNormalized and hasRecoveryMarker then
     return {
       version = 2,
       kind = "recoverable",
       fingerprint = fingerprint,
-      recovery = recovery,
     }
   end
 
@@ -198,7 +180,6 @@ function SlotRecord.encode(binding)
     baseSpaceId = binding.baseSpaceId,
     fullscreenTarget = cloneTable(binding.fullscreenTarget),
     fingerprint = cloneTable(binding.fingerprint),
-    recovery = cloneTable(binding.recovery),
   })
 end
 

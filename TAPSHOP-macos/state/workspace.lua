@@ -55,9 +55,6 @@ function Workspace.new(indexOrName, nameOrThreshold, maybeThreshold)
         spaceId = nil,
       },
       fingerprint = cloneFingerprint(nil),
-      recovery = {
-        closedAt = nil,
-      },
     },
     _minimizeThreshold = minimizeThreshold,
   }, Workspace)
@@ -81,10 +78,6 @@ end
 
 function Workspace:getFingerprint()
   return self.binding.fingerprint
-end
-
-function Workspace:getRecoveryClosedAt()
-  return self.binding.recovery.closedAt
 end
 
 function Workspace:getBaseSpaceId()
@@ -111,7 +104,6 @@ function Workspace:pair(baseWindowId, recoveryMeta)
   self.binding.kind = "paired"
   self.binding.baseWindowId = baseWindowId
   self.binding.baseSpaceId = nil
-  self.binding.recovery.closedAt = nil
   self:setFingerprint(recoveryMeta)
   self:clearFullscreenState()
   self:resetInputBuffer()
@@ -121,11 +113,10 @@ function Workspace:setFingerprint(recoveryMeta)
   self.binding.fingerprint = cloneFingerprint(recoveryMeta)
 end
 
-function Workspace:setRecoverable(recoveryMeta, closedAt)
+function Workspace:setRecoverable(recoveryMeta)
   self.binding.kind = "recoverable"
   self.binding.baseWindowId = nil
   self.binding.baseSpaceId = nil
-  self.binding.recovery.closedAt = closedAt
   self:setFingerprint(recoveryMeta)
   self:resetInputBuffer()
   self:clearFullscreenState()
@@ -136,20 +127,12 @@ function Workspace:clear()
   self.binding.baseWindowId = nil
   self.binding.baseSpaceId = nil
   self.binding.fingerprint = cloneFingerprint(nil)
-  self.binding.recovery.closedAt = nil
   self:resetInputBuffer()
   self:clearFullscreenState()
 end
 
-function Workspace:markClosedForRecovery(closedAt)
-  self:setRecoverable(self.binding.fingerprint, closedAt)
-end
-
-function Workspace:clearRecoveryTracking()
-  self.binding.recovery.closedAt = nil
-  if self.binding.kind == "recoverable" then
-    self:clear()
-  end
+function Workspace:markClosedForRecovery()
+  self:setRecoverable(self.binding.fingerprint)
 end
 
 function Workspace:canRecover()
@@ -197,19 +180,6 @@ function Workspace:getStoredWindowTitle()
     return titleRaw
   end
   return "[empty]"
-end
-
-function Workspace:getStoredDisplayTitle()
-  local title = self:getStoredWindowTitle()
-  if title == "[empty]" then
-    return title
-  end
-
-  local appName = self.binding.fingerprint.appName
-  if type(appName) == "string" and appName:match("%S") then
-    return string.format("[%s] %s", appName, title)
-  end
-  return title
 end
 
 function Workspace:setFullscreenState(opts)
