@@ -26,6 +26,7 @@ local YoutubeService = require("services.youtube_service")
 local SpotifyService = require("services.spotify_service")
 local SystemAudioService = require("services.system_audio_service")
 local Toast = require("ui.toast")
+local ToastMessage = require("ui.toast_message")
 local Popover = require("ui.popover")
 local SettingsWindow = require("ui.settings_window")
 
@@ -79,7 +80,7 @@ app.windowFilter = windowFilter
 
 hotkeyManager:bindAll()
 
-toast("TAPSHOP ready (Hammerspoon)")
+toast(ToastMessage.status("TAPSHOP ready (Hammerspoon)"))
 
 hs.timer.doAfter(0.10, function()
   if app.warmHotkeyUiCache then
