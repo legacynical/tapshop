@@ -1,4 +1,5 @@
 local Toast = {}
+local ToastMessage = require("ui.toast_message")
 
 function Toast.new(cfg)
   local lines = {}
@@ -22,18 +23,6 @@ function Toast.new(cfg)
     })
   end
 
-  local function normalizeLine(entry)
-    if type(entry) == "table" and type(entry.segments) == "table" then
-      return entry
-    end
-    return {
-      prefix = true,
-      segments = {
-        { text = tostring(entry), color = defaultTextColor },
-      },
-    }
-  end
-
   local function lineHeight()
     return math.floor(cfg.tapshopMsgTextSize * 1.35)
   end
@@ -48,6 +37,13 @@ function Toast.new(cfg)
     end
 
     local bundleID = line.imageBundleID
+    if (type(bundleID) ~= "string" or bundleID == "")
+      and type(line.imageAppName) == "string"
+      and line.imageAppName ~= "" then
+      local app = hs.application.find(line.imageAppName)
+      bundleID = app and app:bundleID() or nil
+    end
+
     if type(bundleID) ~= "string" or bundleID == "" then
       return nil
     end
@@ -166,7 +162,7 @@ function Toast.new(cfg)
     local showPrefixes = #lines > 1
 
     for i = 1, #lines do
-      local line = normalizeLine(lines[i])
+      local line = lines[i]
       local parts = resolveLineParts(line, i == #lines, showPrefixes)
       local lineY = contentRect.y + ((i - 1) * currentLineHeight)
       local cursorX = contentRect.x
@@ -250,12 +246,17 @@ function Toast.new(cfg)
   end
 
   return function(msg, secs)
-    lines[#lines + 1] = msg
+    local normalized = ToastMessage.normalize(msg, secs)
+    for _, line in ipairs(normalized.lines) do
+      lines[#lines + 1] = line
+    end
     if #lines > cfg.tapshopMsgMaxLines then
-      table.remove(lines, 1)
+      while #lines > cfg.tapshopMsgMaxLines do
+        table.remove(lines, 1)
+      end
     end
     render()
-    scheduleClear(secs ~= nil and secs or defaultSecs)
+    scheduleClear(normalized.duration or secs or defaultSecs)
   end
 end
 
