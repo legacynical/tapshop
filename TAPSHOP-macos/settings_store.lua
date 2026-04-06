@@ -103,20 +103,6 @@ function SettingsStore.setBoolean(key, value)
   hs.settings.set(key, value == true)
 end
 
-function SettingsStore.getBooleanWithLegacyKey(key, legacyKey, defaultValue)
-  local value = hs.settings.get(key)
-  if type(value) == "boolean" then
-    return value
-  end
-
-  local migrated = SettingsStore.getBoolean(legacyKey, defaultValue)
-  SettingsStore.setBoolean(key, migrated)
-  if legacyKey and legacyKey ~= "" then
-    hs.settings.clear(legacyKey)
-  end
-  return migrated
-end
-
 function SettingsStore.getOpacity(key, defaultValue)
   local value = hs.settings.get(key)
   if type(value) == "number" and value >= 0.40 and value <= 1.00 then
