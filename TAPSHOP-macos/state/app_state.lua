@@ -2,6 +2,7 @@ local Workspace = require("state.workspace")
 local SlotRecord = require("state.slot_record")
 local SlotRow = require("state.slot_row")
 local configModule = require("config")
+local ToastMessage = require("ui.toast_message")
 
 local AppState = {}
 AppState.__index = AppState
@@ -308,7 +309,7 @@ function AppState:_restoreWorkspacePairings()
           end
         elseif persisted.kind == "recoverable" then
           if self.cfg.recoverClosedWindows then
-            workspace:setRecoverable(persisted.fingerprint, persisted.recovery and persisted.recovery.closedAt or nil)
+            workspace:setRecoverable(persisted.fingerprint)
           else
             workspace:clear()
           end
@@ -540,38 +541,35 @@ function AppState:_restoreWorkspaceFromCandidate(win)
     return false
   end
 
+  local restoredWorkspaces = {}
   for _, workspace in ipairs(self.workspaces) do
     if workspace:canRecover()
       and workspace:matchesRecoveryCandidate(candidateMeta) then
       self:_pairWorkspace(workspace, candidateId, win)
-      self:_persistWorkspacePairings()
-      self.toast({
-        segments = {
-          { text = string.format("Restored %s: ", workspace:getName()), color = TOAST_WHITE },
-          { text = candidateMeta.displayTitle or "[empty]", color = PAIR_TOAST_COLOR },
-        },
-      }, 2.0)
-      return true
+      restoredWorkspaces[#restoredWorkspaces + 1] = workspace
     end
   end
 
+  if #restoredWorkspaces > 0 then
+    self:_persistWorkspacePairings()
+    self.toast(self:_formatRestoreToast(restoredWorkspaces, win))
+    return true
+  end
   return false
 end
 
 function AppState:_formatPairToast(workspace, win)
   local app = win and win:application() or nil
   local label = self.windowService.windowTitle and self.windowService.windowTitle(win) or self.windowService.displayTitle(win)
-  if label == "[empty]" then
-    return string.format("[Pairing %s]", workspace:getName())
-  end
-  return {
-    imageBundleID = app and app:bundleID() or nil,
-    imageAppName = app and app:name() or nil,
-    segments = {
-      { text = string.format("Pairing %s: ", workspace:getName()), color = TOAST_WHITE },
-      { text = label, color = PAIR_TOAST_COLOR },
-    },
-  }
+  return ToastMessage.windowAction({
+    prefixText = string.format("Pairing %s: ", workspace:getName()),
+    titleText = label,
+    bundleID = app and app:bundleID() or nil,
+    appName = app and app:name() or nil,
+    prefixColor = TOAST_WHITE,
+    titleColor = PAIR_TOAST_COLOR,
+    duration = 2.0,
+  })
 end
 
 function AppState:_formatUnpairToast(workspace, win)
@@ -581,26 +579,46 @@ function AppState:_formatUnpairToast(workspace, win)
   if label == "[empty]" then
     label = workspace:getStoredWindowTitle()
   end
-  return {
-    imageBundleID = app and app:bundleID() or fingerprint.bundleID or nil,
-    imageAppName = app and app:name() or fingerprint.appName or nil,
-    segments = {
-      { text = string.format("Unpairing %s: ", workspace:getName()), color = TOAST_WHITE },
-      { text = label, color = UNPAIR_TOAST_COLOR },
-    },
-  }
+  return ToastMessage.windowAction({
+    prefixText = string.format("Unpairing %s: ", workspace:getName()),
+    titleText = label,
+    bundleID = app and app:bundleID() or fingerprint.bundleID or nil,
+    appName = app and app:name() or fingerprint.appName or nil,
+    prefixColor = TOAST_WHITE,
+    titleColor = UNPAIR_TOAST_COLOR,
+  })
 end
 
 function AppState:_formatClosedWindowUnpairToast(workspace)
-  return {
-    imageBundleID = workspace and workspace:getFingerprint() and workspace:getFingerprint().bundleID or nil,
-    imageAppName = workspace and workspace:getFingerprint() and workspace:getFingerprint().appName or nil,
-    segments = {
-      { text = "[Unpaired Closed Window: ", color = TOAST_WHITE },
-      { text = workspace and workspace:getStoredWindowTitle() or "[empty]", color = UNPAIR_TOAST_COLOR },
-      { text = "]", color = TOAST_WHITE },
-    },
-  }
+  local fingerprint = workspace and workspace:getFingerprint() or {}
+  return ToastMessage.windowAction({
+    prefixText = "[Unpaired Closed Window: ",
+    titleText = workspace and workspace:getStoredWindowTitle() or "[empty]",
+    bundleID = fingerprint.bundleID or nil,
+    appName = fingerprint.appName or nil,
+    prefixColor = TOAST_WHITE,
+    titleColor = UNPAIR_TOAST_COLOR,
+    suffixText = "]",
+    suffixColor = TOAST_WHITE,
+  })
+end
+
+function AppState:_formatRestoreToast(workspaces, win)
+  local app = win and win:application() or nil
+  local label = self.windowService.windowTitle and self.windowService.windowTitle(win) or self.windowService.displayTitle(win)
+  local names = {}
+  for _, ws in ipairs(workspaces) do
+    names[#names + 1] = ws:getName()
+  end
+  return ToastMessage.windowAction({
+    prefixText = "Restored " .. table.concat(names, ", ") .. ": ",
+    titleText = label,
+    bundleID = app and app:bundleID() or nil,
+    appName = app and app:name() or nil,
+    prefixColor = TOAST_WHITE,
+    titleColor = PAIR_TOAST_COLOR,
+    duration = 2.0,
+  })
 end
 
 function AppState:_clearRecoverableWorkspaces()
@@ -622,14 +640,6 @@ function AppState:_clearWorkspaceAndPersist(workspace)
   self:_persistWorkspacePairings()
 end
 
-function AppState:_handleMissingPairedWindow(workspace, toastMessage)
-  self:_clearWorkspaceAndPersist(workspace)
-  if toastMessage then
-    self.toast(toastMessage)
-  end
-  return "cleared_missing_paired_window"
-end
-
 function AppState:pairSlot(index, sourceWindow)
   local workspace = self:_getWorkspace(index)
   if not workspace then
@@ -638,13 +648,13 @@ function AppState:pairSlot(index, sourceWindow)
 
   local win = sourceWindow
   if not win then
-    self.toast("No window to pair!")
+    self.toast(ToastMessage.plain("No window to pair!"))
     return
   end
 
   self:_runPairingAction(function()
     self:_pairWorkspace(workspace, win:id(), win)
-    self.toast(self:_formatPairToast(workspace, win), 2.0)
+    self.toast(self:_formatPairToast(workspace, win))
   end)
 end
 
@@ -658,7 +668,7 @@ function AppState:activateSlot(index)
   self:_runWorkspaceAction(function()
     local win = hs.window.frontmostWindow()
     if not win then
-      self.toast("No active window found!")
+      self.toast(ToastMessage.plain("No active window found!"))
       return
     end
 
@@ -667,7 +677,7 @@ function AppState:activateSlot(index)
     if not workspace:isPaired() then
       self:_pairWorkspace(workspace, currentId, win)
       bindingChanged = true
-      self.toast(self:_formatPairToast(workspace, win), 2.0)
+      self.toast(self:_formatPairToast(workspace, win))
       return
     end
 
@@ -730,7 +740,7 @@ function AppState:activateSlot(index)
         workspace:resetInputBuffer()
         self:_activateResolvedPairedWindow(workspace, paired, focusedSpaceId)
       elseif not self:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId) then
-        self.toast("Window not found in any spaces")
+        self.toast(ToastMessage.plain("Window not found in any spaces"))
       end
       return
     end
@@ -767,7 +777,7 @@ function AppState:unpairSlot(index)
       workspace:clear()
       self.toast(toastPayload)
     else
-      self.toast(workspace:getName() .. " is already unpaired!")
+      self.toast(ToastMessage.plain(workspace:getName() .. " is already unpaired!"))
     end
   end)
 end
@@ -777,7 +787,7 @@ function AppState:unpairAll()
     for _, workspace in ipairs(self.workspaces) do
       workspace:clear()
     end
-    self.toast("[Unpaired All Windows]")
+    self.toast(ToastMessage.plain("[Unpaired All Windows]"))
   end)
 end
 
@@ -951,7 +961,7 @@ function AppState:handleWindowEvent(event, win)
           goto continue_window_destroy
         end
         if self.cfg.recoverClosedWindows then
-          workspace:markClosedForRecovery(hs.timer.secondsSinceEpoch())
+          workspace:markClosedForRecovery()
         else
           closedWindowToast = self:_formatClosedWindowUnpairToast(workspace)
           workspace:clear()
