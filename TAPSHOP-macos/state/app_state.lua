@@ -24,6 +24,7 @@ function AppState.new(cfg, deps)
     },
     hotkeyManager = nil,
     popover = nil,
+    settingsWindow = nil,
   }, AppState)
 
   for i = 1, 9 do
@@ -37,8 +38,9 @@ function AppState.new(cfg, deps)
   return self
 end
 
-function AppState:attachUi(popover)
+function AppState:attachUi(popover, settingsWindow)
   self.popover = popover
+  self.settingsWindow = settingsWindow
 end
 
 function AppState:attachHotkeyManager(hotkeyManager)
@@ -76,10 +78,17 @@ function AppState:getYouTubeTargetId()
 end
 
 function AppState:syncUi()
-  if self.popover and self.popover.refreshCache then
-    self.popover:refreshCache()
-  elseif self.popover and self.popover.refreshIfShown then
-    self.popover:refreshIfShown()
+  local components = {
+    self.popover,
+    self.settingsWindow,
+  }
+
+  for _, component in ipairs(components) do
+    if component and component.refreshCache then
+      component:refreshCache()
+    elseif component and component.refreshIfShown then
+      component:refreshIfShown()
+    end
   end
 end
 
@@ -784,6 +793,23 @@ function AppState:showPopover()
   end
 end
 
+function AppState:toggleSettingsWindow()
+  if not self.settingsWindow then
+    return
+  end
+
+  if self.settingsWindow.isShown and self.settingsWindow:isShown() then
+    if self.settingsWindow.hide then
+      self.settingsWindow:hide()
+    end
+    return
+  end
+
+  if self.settingsWindow.show then
+    self.settingsWindow:show()
+  end
+end
+
 function AppState:setPopoverAutoHide(enabled)
   self.cfg.popoverAutoHideAfterAction = enabled == true
   self.settingsStore.setBoolean(configModule.keys.popoverAutoHideAfterAction, self.cfg.popoverAutoHideAfterAction)
@@ -793,12 +819,27 @@ end
 function AppState:setPopoverAlwaysOnTop(enabled)
   self.cfg.popoverAlwaysOnTop = enabled == true
   self.settingsStore.setBoolean(configModule.keys.popoverAlwaysOnTop, self.cfg.popoverAlwaysOnTop)
+  if self.popover and self.popover.syncWindowLevel then
+    self.popover:syncWindowLevel()
+  end
+  if self.settingsWindow and self.settingsWindow.syncWindowLevel then
+    self.settingsWindow:syncWindowLevel()
+  end
   self:syncUi()
 end
 
 function AppState:setPopoverHidePairButtons(enabled)
   self.cfg.popoverHidePairButtons = enabled == true
   self.settingsStore.setBoolean(configModule.keys.popoverHidePairButtons, self.cfg.popoverHidePairButtons)
+  self:syncUi()
+end
+
+function AppState:setRecoverClosedWindows(enabled)
+  self.cfg.recoverClosedWindows = enabled == true
+  self.settingsStore.setBoolean(configModule.keys.recoverClosedWindows, self.cfg.recoverClosedWindows)
+  if not self.cfg.recoverClosedWindows and self:_clearRecoverableWorkspaces() then
+    self:_persistWorkspacePairings()
+  end
   self:syncUi()
 end
 
@@ -1031,6 +1072,10 @@ POPOVER_ACTIONS["unpairAll"] = function(self)
   self:unpairAll()
 end
 
+POPOVER_ACTIONS["toggleSettingsWindow"] = function(self)
+  self:toggleSettingsWindow()
+end
+
 POPOVER_ACTIONS["setAutoHideAfterAction"] = function(self, body)
   self:setPopoverAutoHide(tonumber(body.slot) == 1)
 end
@@ -1041,6 +1086,10 @@ end
 
 POPOVER_ACTIONS["setHidePairButtons"] = function(self, body)
   self:setPopoverHidePairButtons(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["setRecoverClosedWindows"] = function(self, body)
+  self:setRecoverClosedWindows(tonumber(body.slot) == 1)
 end
 
 POPOVER_ACTIONS["setPopoverOpacity"] = function(self, body)

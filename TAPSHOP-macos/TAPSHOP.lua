@@ -27,6 +27,7 @@ local SpotifyService = require("services.spotify_service")
 local SystemAudioService = require("services.system_audio_service")
 local Toast = require("ui.toast")
 local Popover = require("ui.popover")
+local SettingsWindow = require("ui.settings_window")
 
 local cfg = Config.load()
 local toast = Toast.new(cfg)
@@ -50,8 +51,11 @@ local popover = Popover.new(app, cfg, {
   settingsStore = settingsStore,
   windowService = windowService,
 })
+local settingsWindow = SettingsWindow.new(app, cfg, {
+  settingsStore = settingsStore,
+})
 
-app:attachUi(popover)
+app:attachUi(popover, settingsWindow)
 
 local windowFilter = hs.window.filter.new()
 windowFilter:subscribe({
@@ -83,6 +87,9 @@ hs.timer.doAfter(0.10, function()
   end
   if popover.warmStaticCaches then
     popover:warmStaticCaches()
+  end
+  if settingsWindow.warmStaticCaches then
+    settingsWindow:warmStaticCaches()
   end
 end)
 

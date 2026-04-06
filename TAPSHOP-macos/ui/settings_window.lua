@@ -1,35 +1,57 @@
-local clientScript = require("ui.popover.client_script")
+local clientScript = require("ui.settings.client_script")
 local configModule = require("config")
-local popoverLayout = require("ui.popover.layout")
-local popoverRender = require("ui.popover.render")
-local popoverStyles = require("ui.popover.styles")
+local hotkeyList = require("ui.settings.hotkey_list")
+local settingsLayout = require("ui.settings.layout")
+local settingsRender = require("ui.settings.render")
+local settingsStyles = require("ui.settings.styles")
 local popoverTheme = require("ui.popover.theme")
 local webviewPanel = require("ui.webview_panel")
 
-local Popover = {}
+local SettingsWindow = {}
 
-function Popover.new(app, cfg, deps)
-  local windowService = deps.windowService
+function SettingsWindow.new(app, cfg, deps)
   local settingsStore = deps.settingsStore
 
   local panel = nil
-  local callerWin = nil
-  local activeWin = nil
-  local pendingActiveWin = nil
-  local pendingRefresh = false
-  local refreshTimer = nil
+  local cachedThemeCss = nil
   local isDragging = false
   local isResizing = false
-  local cachedThemeCss = nil
-  local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
-  local savedSize = popoverLayout.loadSavedSize(settingsStore, configModule.keys)
-  local runtimeBounds = popoverLayout.initialRuntimeBounds()
+  local isFocused = false
+  local state = {
+    tab = "general",
+    search = "",
+    scrollTop = 0,
+    validation = nil,
+  }
+  local savedTopLeft = settingsStore.getPoint(configModule.keys.settingsTopLeft)
+  local savedSize = settingsLayout.loadSavedSize(settingsStore, configModule.keys)
+  local runtimeBounds = settingsLayout.initialRuntimeBounds()
+
+  local function normalizeSettingsTab(value)
+    if value == "hotkeys" then
+      return "hotkeys"
+    end
+    return "general"
+  end
+
+  local function syncUiStateFromBody(body)
+    if type(body) ~= "table" then
+      return
+    end
+    if type(body.search) == "string" then
+      state.search = body.search
+    end
+    if type(body.settingsTab) == "string" then
+      state.tab = normalizeSettingsTab(body.settingsTab)
+    end
+    local scrollTop = tonumber(body.scrollTop)
+    if scrollTop then
+      state.scrollTop = math.max(0, math.floor(scrollTop))
+    end
+  end
 
   local function pickScreen()
-    return hs.mouse.getCurrentScreen()
-      or (activeWin and activeWin:screen())
-      or (callerWin and callerWin:screen())
-      or hs.screen.mainScreen()
+    return hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
   end
 
   local function screenFrame(screen)
@@ -58,24 +80,7 @@ function Popover.new(app, cfg, deps)
     return hs.geometry.rect(frame.x, frame.y, frame.w, frame.h)
   end
 
-  local function centeredRect(screen)
-    return geometryRect(popoverLayout.centeredFrame(
-      screenFrame(screen or pickScreen()),
-      savedSize,
-      runtimeBounds
-    ))
-  end
-
-  local function frameForSavedTopLeft(screen)
-    return popoverLayout.frameForTopLeft(
-      savedTopLeft,
-      screenFrame(screen or pickScreen()),
-      savedSize,
-      runtimeBounds
-    )
-  end
-
-  local function currentPopoverLevel()
+  local function currentPanelLevel()
     if cfg.popoverAlwaysOnTop then
       return hs.drawing.windowLevels.popUpMenu
     end
@@ -88,17 +93,17 @@ function Popover.new(app, cfg, deps)
       x = math.floor(frame.x),
       y = math.floor(frame.y),
     }
-    settingsStore.setPoint(configModule.keys.popoverTopLeft, savedTopLeft)
+    settingsStore.setPoint(configModule.keys.settingsTopLeft, savedTopLeft)
   end
 
   local function saveSize(size, screen)
-    local clamped = popoverLayout.clampSize(
+    local clamped = settingsLayout.clampSize(
       size,
       screenFrame(screen or pickScreen()),
       runtimeBounds
     )
     savedSize = clamped
-    settingsStore.setSize(configModule.keys.popoverMainSize, clamped)
+    settingsStore.setSize(configModule.keys.settingsSize, clamped)
     return clamped
   end
 
@@ -116,95 +121,89 @@ function Popover.new(app, cfg, deps)
     end
   end
 
-  local function currentHeaderLines()
-    local info = windowService.getWindowInfo(activeWin)
-      or windowService.getWindowInfo(callerWin)
-      or windowService.getWindowInfo()
-    local primaryLine = "No active window found"
-    local bundleID = nil
-    local appName = nil
+  local function pushValidationState(panelRef, result)
+    if not panelRef:isShown() then
+      return
+    end
+    local payload = hs.json.encode(result or { message = "" }) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplyValidation(" .. payload .. ")")
+  end
 
-    if info then
-      local rawTitle = info.title or ""
-      local title = rawTitle:match("%S") and rawTitle or "[untitled]"
-      appName = info.appName or ""
-      bundleID = info.bundleID or nil
-      primaryLine = title
+  local function pushHotkeyState(panelRef)
+    if not panelRef:isShown() then
+      return
     end
 
-    return primaryLine, bundleID, appName
+    local hotkeyState = app:getHotkeyUiState()
+    local payload = hs.json.encode({
+      rows = hotkeyState.rows or {},
+      validation = state.validation,
+      scrollTop = state.scrollTop or 0,
+    }) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplyHotkeyState(" .. payload .. ")")
   end
 
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
-    local primaryLine, headerBundleID, headerAppName = currentHeaderLines()
-    local css = cachedThemeCss or popoverStyles.buildCss(theme)
+    local css = cachedThemeCss or settingsStyles.buildCss(theme)
+    local shouldRenderHotkeys = state.tab == "hotkeys"
+    local hotkeyState = {
+      rows = {},
+      conflictsById = {},
+      overrides = {},
+    }
+    local hotkeysHtml = nil
+
+    if shouldRenderHotkeys then
+      hotkeyState = app:getHotkeyUiState()
+      if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
+        hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
+      else
+        hotkeysHtml = hotkeyList.buildHtml(hotkeyState.rows or {})
+      end
+    end
 
     return {
       css = css,
       script = clientScript.script,
-      layoutPolicy = popoverLayout.clientPolicy(),
-      theme = theme,
-      primaryLine = primaryLine,
-      headerBundleID = headerBundleID,
-      headerAppName = headerAppName,
+      layoutPolicy = settingsLayout.clientPolicy(),
       config = {
+        autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
+        alwaysOnTop = cfg.popoverAlwaysOnTop == true,
         hidePairButtons = cfg.popoverHidePairButtons == true,
+        recoverClosedWindows = cfg.recoverClosedWindows == true,
+        opacityPercent = theme.opacityPercent,
       },
-      rows = app:getWorkspaceRowModels(),
+      settingsTab = state.tab,
+      search = state.search,
+      scrollTop = state.scrollTop or 0,
+      validation = state.validation,
+      hotkeys = hotkeyState.rows or {},
+      hotkeysHtml = hotkeysHtml,
     }
   end
 
-  local function stopRefreshTimer()
-    if refreshTimer then
-      refreshTimer:stop()
-      refreshTimer = nil
-    end
-  end
-
-  local function flushQueuedRefresh()
-    pendingRefresh = false
-    stopRefreshTimer()
-
-    if pendingActiveWin ~= nil then
-      activeWin = pendingActiveWin
-      pendingActiveWin = nil
-    end
-
-    if panel:isShown() then
-      panel:refresh()
-      return
-    end
-
-    panel:markDirty()
-  end
-
-  local function queueRefresh()
-    if pendingRefresh then
-      return
-    end
-
-    pendingRefresh = true
-    stopRefreshTimer()
-    refreshTimer = hs.timer.doAfter(0, flushQueuedRefresh)
-  end
-
   panel = webviewPanel.new({
-    messageHandler = "tapshop",
+    messageHandler = "tapshopSettings",
     initialRect = function()
       local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
-      return centeredRect(screen)
+      return geometryRect(settingsLayout.centeredFrame(
+        screenFrame(screen),
+        savedSize,
+        runtimeBounds
+      ))
     end,
     windowStyle = hs.webview.windowMasks.borderless,
     transparent = true,
-    level = currentPopoverLevel,
+    level = currentPanelLevel,
     allowTextEntry = true,
     buildHtml = function()
-      return popoverRender.buildHtml(buildRenderContext())
+      return settingsRender.buildHtml(buildRenderContext())
     end,
     handleAction = function(panelRef, msg)
       local body = msg.body or {}
       local action = body.action
+      syncUiStateFromBody(body)
 
       if action == "dragStart" then
         isDragging = true
@@ -250,7 +249,7 @@ function Popover.new(app, cfg, deps)
         local nextY = frame.y
         local nextW = frame.w
         local nextH = frame.h
-        local minWidth = popoverLayout.minWidth()
+        local minWidth = settingsLayout.minWidth()
         local currentScreenFrame = screenFrame(pickScreen())
 
         if direction:find("w", 1, true) then
@@ -261,13 +260,13 @@ function Popover.new(app, cfg, deps)
         end
 
         if direction:find("n", 1, true) then
-          nextH = popoverLayout.clampSize({
+          nextH = settingsLayout.clampSize({
             w = nextW,
             h = frame.h - dh,
           }, currentScreenFrame, runtimeBounds).h
           nextY = frame.y + (frame.h - nextH)
         elseif direction:find("s", 1, true) then
-          nextH = popoverLayout.clampSize({
+          nextH = settingsLayout.clampSize({
             w = nextW,
             h = frame.h + dh,
           }, currentScreenFrame, runtimeBounds).h
@@ -276,7 +275,7 @@ function Popover.new(app, cfg, deps)
         panelRef:getWebview():frame(hs.geometry.rect(nextX, nextY, nextW, nextH))
         return
       end
-      if action == "updatePopoverBounds" then
+      if action == "updateSettingsBounds" then
         local targetMinHeight = tonumber(body.targetMinHeight)
         local derivedMinHeight = tonumber(body.derivedMinHeight)
         local derivedMaxHeight = tonumber(body.derivedMaxHeight)
@@ -285,13 +284,13 @@ function Popover.new(app, cfg, deps)
         local measuredMinHeight = tonumber(body.measuredMinHeight)
         local currentHeight = tonumber(body.currentHeight)
         local currentUiScale = tonumber(body.currentUiScale)
-        local bodyShellHeight = tonumber(body.bodyShellHeight)
-        local workspaceListHeight = tonumber(body.workspaceListHeight)
+        local shellHeight = tonumber(body.shellHeight)
+        local scrollHeight = tonumber(body.scrollHeight)
         if not derivedMinHeight or not derivedMaxHeight then
           return
         end
 
-        local normalizedMinHeight = math.max(popoverLayout.targetMinHeight(), math.floor(derivedMinHeight + 0.5))
+        local normalizedMinHeight = math.max(settingsLayout.targetMinHeight(), math.floor(derivedMinHeight + 0.5))
         local normalizedMaxHeight = math.max(normalizedMinHeight, math.floor(derivedMaxHeight + 0.5))
         runtimeBounds = {
           minHeight = normalizedMinHeight,
@@ -302,13 +301,13 @@ function Popover.new(app, cfg, deps)
           measuredMinHeight = measuredMinHeight,
           currentHeight = currentHeight,
           currentUiScale = currentUiScale,
-          bodyShellHeight = bodyShellHeight,
-          workspaceListHeight = workspaceListHeight,
+          shellHeight = shellHeight,
+          scrollHeight = scrollHeight,
         }
 
         if not isResizing then
           local currentFrame = frameTable(panelRef:getWebview():frame())
-          local nextFrame = popoverLayout.clampFrame(
+          local nextFrame = settingsLayout.clampFrame(
             currentFrame,
             screenFrame(pickScreen()),
             runtimeBounds
@@ -324,7 +323,7 @@ function Popover.new(app, cfg, deps)
               h = nextFrame.h,
             })
           else
-            local clampedSavedSize = popoverLayout.clampSize(savedSize, screenFrame(pickScreen()), runtimeBounds)
+            local clampedSavedSize = settingsLayout.clampSize(savedSize, screenFrame(pickScreen()), runtimeBounds)
             if savedSize.w ~= clampedSavedSize.w or savedSize.h ~= clampedSavedSize.h then
               saveSize(clampedSavedSize)
             end
@@ -342,36 +341,61 @@ function Popover.new(app, cfg, deps)
         panelRef:hide()
         return
       end
+      if action == "setSettingsTab" then
+        state.validation = nil
+        state.tab = normalizeSettingsTab(body.settingsTab)
+        if state.tab == "hotkeys" then
+          pushHotkeyState(panelRef)
+        end
+        requestBoundsRecompute(panelRef)
+        return
+      end
+      if action == "setHotkeySearch" then
+        return
+      end
 
-      if action == "pair" then
-        body.sourceWindow = activeWin or callerWin
-      end
       local result = app:handlePopoverAction(body)
-      if action == "setAlwaysOnTop" then
-        panelRef:setLevel(currentPopoverLevel())
+      if action == "updateHotkeyBinding" or action == "resetHotkeyBinding" or action == "resetAllHotkeys" then
+        if result and result.ok then
+          state.validation = nil
+          pushHotkeyState(panelRef)
+        else
+          state.validation = result
+          pushValidationState(panelRef, result)
+        end
+        return
       end
-      return result
+      if action == "setAlwaysOnTop" then
+        panelRef:setLevel(currentPanelLevel())
+      end
     end,
-    windowCallback = function(panelRef, act, _, state)
-      if act == "focusChange" and state == false and panelRef:isShown() and not cfg.popoverAlwaysOnTop then
-        panelRef:hide()
+    windowCallback = function(_, act, _, focusState)
+      if act == "focusChange" then
+        isFocused = focusState == true
       end
     end,
     beforeShow = function(_, view)
-      callerWin = hs.window.frontmostWindow()
-      activeWin = callerWin
       local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
       if savedTopLeft then
-        local frame = frameForSavedTopLeft(screen)
+        local frame = settingsLayout.frameForTopLeft(
+          savedTopLeft,
+          screenFrame(screen),
+          savedSize,
+          runtimeBounds
+        )
         view:frame(geometryRect(frame))
         if frame.x ~= savedTopLeft.x or frame.y ~= savedTopLeft.y then
           savedTopLeft = { x = frame.x, y = frame.y }
-          settingsStore.setPoint(configModule.keys.popoverTopLeft, savedTopLeft)
+          settingsStore.setPoint(configModule.keys.settingsTopLeft, savedTopLeft)
         end
       else
-        view:frame(centeredRect(screen))
+        view:frame(geometryRect(settingsLayout.centeredFrame(
+          screenFrame(screen),
+          savedSize,
+          runtimeBounds
+        )))
       end
-      view:level(currentPopoverLevel())
+      view:level(currentPanelLevel())
     end,
     afterShow = function(panelRef)
       requestBoundsRecompute(panelRef)
@@ -379,6 +403,10 @@ function Popover.new(app, cfg, deps)
     beforeHide = function()
       isDragging = false
       isResizing = false
+      isFocused = false
+      state.search = ""
+      state.scrollTop = 0
+      state.validation = nil
     end,
   })
 
@@ -396,6 +424,18 @@ function Popover.new(app, cfg, deps)
     panel:toggle()
   end
 
+  function instance:toggleOrFocus()
+    if panel:isShown() and isFocused then
+      panel:hide()
+      return
+    end
+    panel:show()
+  end
+
+  function instance:isShown()
+    return panel:isShown()
+  end
+
   function instance:refreshIfShown()
     if panel:isShown() then
       panel:refresh()
@@ -407,7 +447,7 @@ function Popover.new(app, cfg, deps)
   function instance:refreshCache()
     panel:markDirty()
     cachedThemeCss = nil
-    panel:setLevel(currentPopoverLevel())
+    panel:setLevel(currentPanelLevel())
     if panel:isShown() then
       panel:refresh()
       requestBoundsRecompute(panel)
@@ -416,27 +456,18 @@ function Popover.new(app, cfg, deps)
 
   function instance:warmStaticCaches()
     local theme = popoverTheme.buildTheme(cfg)
-    cachedThemeCss = popoverStyles.buildCss(theme)
-  end
+    cachedThemeCss = settingsStyles.buildCss(theme)
 
-  function instance:requestRefresh(_)
-    queueRefresh()
-  end
-
-  function instance:requestActiveWindowUpdate(win)
-    pendingActiveWin = win or hs.window.frontmostWindow() or activeWin
-    queueRefresh()
-  end
-
-  function instance:updateActiveWindow(win)
-    self:requestActiveWindowUpdate(win)
+    if app.warmHotkeyUiCache then
+      app:warmHotkeyUiCache(hotkeyList.buildHtml)
+    end
   end
 
   function instance:syncWindowLevel()
-    panel:setLevel(currentPopoverLevel())
+    panel:setLevel(currentPanelLevel())
   end
 
   return instance
 end
 
-return Popover
+return SettingsWindow
