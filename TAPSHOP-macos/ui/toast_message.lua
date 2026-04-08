@@ -63,9 +63,15 @@ local function normalizeLine(line)
     appName = line.imageAppName
   end
 
+  local imagePath = nil
+  if type(line.imagePath) == "string" and line.imagePath ~= "" then
+    imagePath = line.imagePath
+  end
+
   return {
     imageBundleID = bundleID,
     imageAppName = appName,
+    imagePath = imagePath,
     segments = segments,
   }
 end
@@ -97,6 +103,9 @@ function ToastMessage.status(text, opts)
   if type(options.imageAppName) == "string" and options.imageAppName ~= "" then
     message.lines[1].imageAppName = options.imageAppName
   end
+  if type(options.imagePath) == "string" and options.imagePath ~= "" then
+    message.lines[1].imagePath = options.imagePath
+  end
 
   return message
 end
@@ -111,6 +120,7 @@ function ToastMessage.windowAction(opts)
   local line = {
     imageBundleID = options.bundleID,
     imageAppName = options.appName,
+    imagePath = options.imagePath,
     segments = {
       {
         text = tostring(options.prefixText or ""),
