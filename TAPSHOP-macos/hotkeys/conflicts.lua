@@ -1,3 +1,5 @@
+local Utils = require("utils")
+
 local Conflicts = {}
 
 local MOD_ORDER = {
@@ -8,11 +10,7 @@ local MOD_ORDER = {
 }
 
 local function normalizeKey(key)
-  local raw = tostring(key or "")
-  if raw:match("^F%d+$") then
-    return raw
-  end
-  return string.lower(raw)
+  return Utils.normalizeKey(key) or ""
 end
 
 function Conflicts.normalizeMods(mods)

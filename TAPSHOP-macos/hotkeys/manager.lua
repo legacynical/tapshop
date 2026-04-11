@@ -22,6 +22,12 @@ local FALLBACK_BINDING_ID = "popover.toggle"
 local FALLBACK_MODS = { "cmd", "alt" }
 local FALLBACK_KEY = "`"
 local FALLBACK_WINDOW_SECONDS = 0.8
+local ASSIGNABLE_MODS = {
+  cmd = true,
+  alt = true,
+  ctrl = true,
+  shift = true,
+}
 
 local function cloneArray(values)
   local out = {}
@@ -52,28 +58,137 @@ local function bindingUsesDefaultPopoverShortcut(binding)
   return Conflicts.normalizeCombo(binding.mods, binding.key) == Conflicts.normalizeCombo(FALLBACK_MODS, FALLBACK_KEY)
 end
 
-local function keyIsAvailable(key)
+local function isSystemKey(key)
+  return Utils.isSystemKey(key)
+end
+
+local function toBindableKey(key)
   if key == false or key == nil or key == "" then
+    return nil
+  end
+  if isSystemKey(key) then
+    return tostring(Utils.normalizeKey(key) or "")
+  end
+  return string.lower(tostring(key or ""))
+end
+
+local function toAssignableMods(mods)
+  local normalized = {}
+  for _, mod in ipairs(mods or {}) do
+    local value = tostring(mod or "")
+    if not ASSIGNABLE_MODS[value] then
+      return nil, value
+    end
+    normalized[#normalized + 1] = value
+  end
+  return normalized, nil
+end
+
+local function keyIsAvailable(key)
+  if isSystemKey(key) then
+    return true
+  end
+  local bindableKey = toBindableKey(key)
+  if not bindableKey then
     return false
   end
-  local map = hs.keycodes.map
-  local raw = tostring(key or "")
-  if raw:match("^F%d+$") then
-    return map[raw] ~= nil
+  return hs.keycodes.map[bindableKey] ~= nil
+end
+
+local function modsFromFlags(flags)
+  local mods = {}
+  if flags and flags.cmd then
+    mods[#mods + 1] = "cmd"
   end
-  local lowered = string.lower(raw)
-  if raw == lowered then
-    return map[raw] ~= nil
+  if flags and flags.alt then
+    mods[#mods + 1] = "alt"
   end
-  return map[raw] ~= nil or map[lowered] ~= nil
+  if flags and flags.ctrl then
+    mods[#mods + 1] = "ctrl"
+  end
+  if flags and flags.shift then
+    mods[#mods + 1] = "shift"
+  end
+  return Conflicts.normalizeMods(mods)
+end
+
+local function comboIsAssignable(mods, key)
+  if not keyIsAvailable(key) then
+    return false, "missing_key"
+  end
+
+  if isSystemKey(key) then
+    return true, nil
+  end
+
+  local assignableMods, unsupportedMod = toAssignableMods(mods)
+  if unsupportedMod then
+    return false, unsupportedMod
+  end
+
+  local bindableKey = toBindableKey(key)
+  if not hs.hotkey or type(hs.hotkey.assignable) ~= "function" then
+    return true, nil
+  end
+
+  local ok, assignable = pcall(hs.hotkey.assignable, assignableMods, bindableKey)
+  if not ok then
+    hs.printf("[tapshop-hotkeys] failed to check assignable %s: %s", tostring(bindableKey), tostring(assignable))
+    return true, nil
+  end
+  return assignable == true, assignable == true and nil or "system_reserved"
+end
+
+local function getSystemAssignedInfo(mods, key)
+  if not hs.hotkey or type(hs.hotkey.systemAssigned) ~= "function" then
+    return false
+  end
+
+  local assignableMods, unsupportedMod = toAssignableMods(mods)
+  if unsupportedMod then
+    return false
+  end
+
+  local bindableKey = toBindableKey(key)
+  if not bindableKey then
+    return false
+  end
+
+  local ok, result = pcall(hs.hotkey.systemAssigned, assignableMods, bindableKey)
+  if not ok then
+    hs.printf("[tapshop-hotkeys] failed to check systemAssigned %s: %s", tostring(bindableKey), tostring(result))
+    return false
+  end
+  return result
+end
+
+local function assignabilityWarning(mods, key, reason)
+  if reason == "missing_key" then
+    return "Key is unavailable in the current keyboard layout."
+  end
+  if reason == "system_reserved" then
+    local info = getSystemAssignedInfo(mods, key)
+    if info then
+      return "Shortcut is reserved by macOS and cannot be assigned."
+    end
+    return "Shortcut cannot be assigned by Hammerspoon."
+  end
+  return "Shortcut cannot be assigned."
 end
 
 local function bindHotkeySafe(mods, key, fn)
-  local ok, bindingOrErr = pcall(hs.hotkey.bind, mods, key, fn)
+  local assignableMods, unsupportedMod = toAssignableMods(mods)
+  if unsupportedMod then
+    hs.printf("[tapshop-hotkeys] failed to bind %s: unsupported modifier %s", tostring(key), tostring(unsupportedMod))
+    return nil
+  end
+
+  local bindableKey = toBindableKey(key)
+  local ok, bindingOrErr = pcall(hs.hotkey.bind, assignableMods, bindableKey, fn)
   if ok then
     return bindingOrErr
   end
-  hs.printf("[tapshop-hotkeys] failed to bind %s: %s", tostring(key), tostring(bindingOrErr))
+  hs.printf("[tapshop-hotkeys] failed to bind %s: %s", tostring(bindableKey), tostring(bindingOrErr))
   return nil
 end
 
@@ -100,6 +215,10 @@ function HotkeyManager.new(app, settingsStore, settingsKey)
     defaults = defaults,
     defaultsById = defaultsById,
     liveHotkeys = {},
+    liveSystemBindingsByCombo = {},
+    liveRawSystemBindingsByCombo = {},
+    systemEventTap = nil,
+    rawSystemEventTap = nil,
     resolvedById = {},
     conflictsById = {},
     fallbackHotkey = nil,
@@ -186,6 +305,81 @@ function HotkeyManager:_deleteBinding(id)
   self.liveHotkeys[id] = nil
 end
 
+function HotkeyManager:_stopSystemBindings()
+  if self.systemEventTap then
+    self.systemEventTap:stop()
+    self.systemEventTap = nil
+  end
+  if self.rawSystemEventTap then
+    self.rawSystemEventTap:stop()
+    self.rawSystemEventTap = nil
+  end
+  self.liveSystemBindingsByCombo = {}
+  self.liveRawSystemBindingsByCombo = {}
+end
+
+function HotkeyManager:_startSystemBindingsIfNeeded()
+  if next(self.liveSystemBindingsByCombo or {}) == nil and next(self.liveRawSystemBindingsByCombo or {}) == nil then
+    self:_stopSystemBindings()
+    return
+  end
+
+  if next(self.liveSystemBindingsByCombo or {}) ~= nil and not self.systemEventTap then
+    self.systemEventTap = hs.eventtap.new({ hs.eventtap.event.types.systemDefined }, function(event)
+      if not event or type(event.systemKey) ~= "function" then
+        return false
+      end
+
+      local info = event:systemKey() or {}
+      if not Utils.isSystemKeyPress(info) then
+        return false
+      end
+      local normalizedKey = Utils.normalizeSystemKeyInfo(info)
+      if not normalizedKey then
+        return false
+      end
+
+      local combo = Conflicts.normalizeCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local binding = self.liveSystemBindingsByCombo[combo]
+      if not binding then
+        return false
+      end
+
+      self:_dispatch(binding)
+      return true
+    end)
+    self.systemEventTap:start()
+  end
+
+  if next(self.liveRawSystemBindingsByCombo or {}) ~= nil and not self.rawSystemEventTap then
+    self.rawSystemEventTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(event)
+      if not event or type(event.getKeyCode) ~= "function" then
+        return false
+      end
+
+      local keyCode = event:getKeyCode()
+      if type(keyCode) ~= "number" or keyCode < 128 then
+        return false
+      end
+
+      local normalizedKey = Utils.normalizeRawKeyCode(keyCode)
+      if not normalizedKey then
+        return false
+      end
+
+      local combo = Conflicts.normalizeCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local binding = self.liveRawSystemBindingsByCombo[combo]
+      if not binding then
+        return false
+      end
+
+      self:_dispatch(binding)
+      return true
+    end)
+    self.rawSystemEventTap:start()
+  end
+end
+
 function HotkeyManager:_deleteFallback()
   if self.fallbackHotkey and self.fallbackHotkey.delete then
     self.fallbackHotkey:delete()
@@ -228,7 +422,20 @@ function HotkeyManager:bindAll()
   for _, binding in ipairs(self.defaults) do
     local resolved = self.resolvedById[binding.id]
     if resolved and isBindingAssigned(resolved) and not self.conflictsById[resolved.id] then
+      if isSystemKey(resolved.key) then
+        local combo = Conflicts.normalizeCombo(resolved.mods, resolved.key)
+        if tostring(resolved.key):match("^SYSTEM_%d+$") then
+          self.liveRawSystemBindingsByCombo[combo] = resolved
+        else
+          self.liveSystemBindingsByCombo[combo] = resolved
+        end
+        goto continue
+      end
       if not keyIsAvailable(resolved.key) then
+        goto continue
+      end
+      local isAssignable = comboIsAssignable(resolved.mods, resolved.key)
+      if not isAssignable then
         goto continue
       end
       self.liveHotkeys[resolved.id] = bindHotkeySafe(resolved.mods, resolved.key, function()
@@ -238,6 +445,7 @@ function HotkeyManager:bindAll()
     ::continue::
   end
 
+  self:_startSystemBindingsIfNeeded()
   self:_bindFallbackIfNeeded()
 end
 
@@ -248,6 +456,7 @@ function HotkeyManager:unbindAll()
     end
     self.liveHotkeys[id] = nil
   end
+  self:_stopSystemBindings()
   self:_deleteFallback()
 end
 
@@ -352,15 +561,6 @@ function HotkeyManager:_buildOverride(binding)
 end
 
 function HotkeyManager:_applyCandidate(candidateById)
-  local conflictsById = Conflicts.detect(candidateById)
-  if next(conflictsById) ~= nil then
-    return false, {
-      code = "conflict",
-      ids = conflictsById,
-      message = "Shortcut conflicts with another TAPSHOP binding.",
-    }
-  end
-
   local popoverBinding = candidateById[FALLBACK_BINDING_ID]
   if not popoverBinding then
     return false, {
@@ -446,6 +646,31 @@ function HotkeyManager:updateBinding(id, payload)
     candidate.enabled = payload.enabled == true
   end
 
+  if isBindingAssigned(candidate) then
+    if not keyIsAvailable(candidate.key) then
+      return {
+        ok = false,
+        code = "unavailable_key",
+        ids = {
+          [id] = {},
+        },
+        message = "Shortcut key is unavailable in the current keyboard layout.",
+      }
+    end
+
+    local isAssignable, reason = comboIsAssignable(candidate.mods, candidate.key)
+    if not isAssignable then
+      return {
+        ok = false,
+        code = "unassignable_shortcut",
+        ids = {
+          [id] = {},
+        },
+        message = assignabilityWarning(candidate.mods, candidate.key, reason),
+      }
+    end
+  end
+
   local ok, err = self:_applyCandidate(candidateById)
   if not ok then
     return {
@@ -467,9 +692,17 @@ function HotkeyManager:updateBinding(id, payload)
   self:invalidateUiCache()
   self:bindAll()
 
+  local conflictIds = cloneArray(self.conflictsById[id])
+  local conflictMessage = nil
+  if #conflictIds > 0 then
+    conflictMessage = "Shortcut saved. Conflicting TAPSHOP hotkeys were disabled until resolved."
+  end
+
   return {
     ok = true,
     warning = self:_warningFor(self.resolvedById[id]),
+    conflictIds = conflictIds,
+    message = conflictMessage,
   }
 end
 
