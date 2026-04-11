@@ -1,3 +1,5 @@
+local persistedSize = require("persisted_size")
+
 local Layout = {}
 
 local SCREEN_MARGIN = 32
@@ -66,9 +68,9 @@ function Layout.initialRuntimeBounds()
 end
 
 function Layout.loadSavedSize(settingsStore, keys)
-  local size = settingsStore.getSize(keys.popoverMainSize)
-    or (keys.popoverSize and settingsStore.getSize(keys.popoverSize))
-    or Layout.defaultSize()
+  local size = persistedSize.load(settingsStore, keys.popoverMainSize, {
+    keys.popoverSize,
+  }) or Layout.defaultSize()
   return cloneSize(size) or Layout.defaultSize()
 end
 

@@ -1,8 +1,10 @@
+local persistedSize = require("persisted_size")
+
 local Layout = {}
 
 local SCREEN_MARGIN = 32
 local PROFILE = {
-  defaultSize = { w = 560, h = 420 },
+  defaultSize = { w = 420, h = 320 },
   minWidth = 420,
   targetMinHeight = 320,
   viewportBaseHeight = 240,
@@ -72,10 +74,10 @@ function Layout.initialRuntimeBounds()
 end
 
 function Layout.loadSavedSize(settingsStore, keys)
-  local size = settingsStore.getSize(keys.settingsSize)
-    or (keys.popoverSettingsSize and settingsStore.getSize(keys.popoverSettingsSize))
-    or (keys.popoverSize and settingsStore.getSize(keys.popoverSize))
-    or Layout.defaultSize()
+  local size = persistedSize.load(settingsStore, keys.settingsSize, {
+    keys.popoverSettingsSize,
+    keys.popoverSize,
+  }) or Layout.defaultSize()
   return cloneSize(size) or Layout.defaultSize()
 end
 
