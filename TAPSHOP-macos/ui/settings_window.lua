@@ -5,6 +5,7 @@ local settingsLayout = require("ui.settings.layout")
 local settingsRender = require("ui.settings.render")
 local settingsStyles = require("ui.settings.styles")
 local popoverTheme = require("ui.popover.theme")
+local Utils = require("utils")
 local webviewPanel = require("ui.webview_panel")
 
 local SettingsWindow = {}
@@ -17,6 +18,8 @@ function SettingsWindow.new(app, cfg, deps)
   local isDragging = false
   local isResizing = false
   local isFocused = false
+  local remapRecorder = nil
+  local remapRecorderId = nil
   local state = {
     tab = "general",
     search = "",
@@ -26,6 +29,8 @@ function SettingsWindow.new(app, cfg, deps)
   local savedTopLeft = settingsStore.getPoint(configModule.keys.settingsTopLeft)
   local savedSize = settingsLayout.loadSavedSize(settingsStore, configModule.keys)
   local runtimeBounds = settingsLayout.initialRuntimeBounds()
+  local pushHotkeyState = nil
+  local stopRemapRecorder = nil
 
   local function normalizeSettingsTab(value)
     if value == "hotkeys" then
@@ -121,6 +126,158 @@ function SettingsWindow.new(app, cfg, deps)
     end
   end
 
+  local function buildSettingsUiConfig(theme)
+    return {
+      autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
+      alwaysOnTop = cfg.popoverAlwaysOnTop == true,
+      hidePairButtons = cfg.popoverHidePairButtons == true,
+      recoverClosedWindows = cfg.recoverClosedWindows == true,
+      opacityPercent = (theme and theme.opacityPercent) or popoverTheme.buildTheme(cfg).opacityPercent,
+    }
+  end
+
+  local function buildSettingsWindowStatePayload()
+    local hotkeyState = app:getHotkeyUiState()
+    return {
+      settingsTab = state.tab,
+      search = state.search,
+      scrollTop = state.scrollTop or 0,
+      validation = state.validation,
+      hotkeys = hotkeyState.rows or {},
+      config = buildSettingsUiConfig(),
+    }
+  end
+
+  local function pushSettingsWindowState(panelRef)
+    if not panelRef or not panelRef:hasContent() then
+      return
+    end
+    local encoded = hs.json.encode(buildSettingsWindowStatePayload()) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplySettingsWindowState && window.tapshopApplySettingsWindowState(" .. encoded .. ")")
+  end
+
+  local function hideRemapPanel()
+    stopRemapRecorder()
+    if panel and panel:isShown() and panel:hasContent() then
+      panel:evaluateJavaScript("window.tapshopCancelRemapRecorder && window.tapshopCancelRemapRecorder()")
+    end
+  end
+
+  local function pushRemapDraft(panelRef, payload)
+    if not panelRef or not panelRef:isShown() then
+      return
+    end
+    local encoded = hs.json.encode(payload or {}) or "{}"
+    panelRef:evaluateJavaScript("window.tapshopApplyRemapDraft && window.tapshopApplyRemapDraft(" .. encoded .. ")")
+  end
+
+  stopRemapRecorder = function()
+    if remapRecorder then
+      remapRecorder:stop()
+      remapRecorder = nil
+    end
+    remapRecorderId = nil
+  end
+
+  local function normalizeRecordedMods(flags)
+    local mods = {}
+    if flags and flags.cmd then
+      mods[#mods + 1] = "cmd"
+    end
+    if flags and flags.alt then
+      mods[#mods + 1] = "alt"
+    end
+    if flags and flags.ctrl then
+      mods[#mods + 1] = "ctrl"
+    end
+    if flags and flags.shift then
+      mods[#mods + 1] = "shift"
+    end
+    return mods
+  end
+
+  local function normalizeRecordedKey(event)
+    if not event then
+      return nil
+    end
+    if event.getType and event:getType() == hs.eventtap.event.types.systemDefined then
+      local info = event.systemKey and event:systemKey() or {}
+      if not Utils.isSystemKeyPress(info) then
+        return nil
+      end
+      return Utils.normalizeSystemKeyInfo(info)
+    end
+    if not event.getKeyCode then
+      return nil
+    end
+    local keyCode = event:getKeyCode()
+    local functionKeys = {
+      [122] = "F1",
+      [120] = "F2",
+      [99] = "F3",
+      [118] = "F4",
+      [96] = "F5",
+      [97] = "F6",
+      [98] = "F7",
+      [100] = "F8",
+      [101] = "F9",
+      [109] = "F10",
+      [103] = "F11",
+      [111] = "F12",
+    }
+    if functionKeys[keyCode] then
+      return functionKeys[keyCode]
+    end
+
+    if keyCode >= 128 then
+      return Utils.normalizeRawKeyCode(keyCode)
+    end
+
+    local raw = hs.keycodes.map[keyCode]
+    if type(raw) ~= "string" or raw == "" then
+      return nil
+    end
+    local lowered = string.lower(raw)
+    if lowered:match("^f%d+$") then
+      return string.upper(lowered)
+    end
+    return lowered
+  end
+
+  local function startRemapRecorder(panelRef, id)
+    stopRemapRecorder()
+    remapRecorderId = tostring(id or "")
+    if remapRecorderId == "" then
+      return
+    end
+
+    remapRecorder = hs.eventtap.new({ hs.eventtap.event.types.keyDown, hs.eventtap.event.types.systemDefined }, function(event)
+      if not panelRef or not panelRef:isShown() or remapRecorderId == nil then
+        stopRemapRecorder()
+        return false
+      end
+
+      local mods = normalizeRecordedMods(event:getFlags() or {})
+      local key = normalizeRecordedKey(event)
+      if not key then
+        return true
+      end
+
+      if key == "escape" and #mods == 0 then
+        hideRemapPanel()
+        return true
+      end
+
+      pushRemapDraft(panelRef, {
+        id = remapRecorderId,
+        mods = mods,
+        key = key,
+      })
+      return true
+    end)
+    remapRecorder:start()
+  end
+
   local function pushValidationState(panelRef, result)
     if not panelRef:isShown() then
       return
@@ -129,7 +286,7 @@ function SettingsWindow.new(app, cfg, deps)
     panelRef:evaluateJavaScript("window.tapshopApplyValidation(" .. payload .. ")")
   end
 
-  local function pushHotkeyState(panelRef)
+  pushHotkeyState = function(panelRef)
     if not panelRef:isShown() then
       return
     end
@@ -167,13 +324,7 @@ function SettingsWindow.new(app, cfg, deps)
       css = css,
       script = clientScript.script,
       layoutPolicy = settingsLayout.clientPolicy(),
-      config = {
-        autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
-        alwaysOnTop = cfg.popoverAlwaysOnTop == true,
-        hidePairButtons = cfg.popoverHidePairButtons == true,
-        recoverClosedWindows = cfg.recoverClosedWindows == true,
-        opacityPercent = theme.opacityPercent,
-      },
+      config = buildSettingsUiConfig(theme),
       settingsTab = state.tab,
       search = state.search,
       scrollTop = state.scrollTop or 0,
@@ -338,10 +489,22 @@ function SettingsWindow.new(app, cfg, deps)
         return
       end
       if action == "close" then
+        hideRemapPanel()
         panelRef:hide()
         return
       end
+      if action == "openRemapRecorder" then
+        startRemapRecorder(panelRef, body.id)
+        return
+      end
+      if action == "cancelRemapRecorder" then
+        stopRemapRecorder()
+        state.validation = nil
+        pushValidationState(panelRef, nil)
+        return
+      end
       if action == "setSettingsTab" then
+        hideRemapPanel()
         state.validation = nil
         state.tab = normalizeSettingsTab(body.settingsTab)
         if state.tab == "hotkeys" then
@@ -357,6 +520,7 @@ function SettingsWindow.new(app, cfg, deps)
       local result = app:handlePopoverAction(body)
       if action == "updateHotkeyBinding" or action == "resetHotkeyBinding" or action == "resetAllHotkeys" then
         if result and result.ok then
+          stopRemapRecorder()
           state.validation = nil
           pushHotkeyState(panelRef)
         else
@@ -375,6 +539,9 @@ function SettingsWindow.new(app, cfg, deps)
       end
     end,
     beforeShow = function(_, view)
+      if panel:hasContent() then
+        pushSettingsWindowState(panel)
+      end
       local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
       if savedTopLeft then
         local frame = settingsLayout.frameForTopLeft(
@@ -401,6 +568,7 @@ function SettingsWindow.new(app, cfg, deps)
       requestBoundsRecompute(panelRef)
     end,
     beforeHide = function()
+      hideRemapPanel()
       isDragging = false
       isResizing = false
       isFocused = false
@@ -438,18 +606,28 @@ function SettingsWindow.new(app, cfg, deps)
 
   function instance:refreshIfShown()
     if panel:isShown() then
-      panel:refresh()
+      pushSettingsWindowState(panel)
+      requestBoundsRecompute(panel)
       return
     end
-    panel:markDirty()
   end
 
   function instance:refreshCache()
-    panel:markDirty()
-    cachedThemeCss = nil
+    local theme = popoverTheme.buildTheme(cfg)
+    local nextThemeCss = settingsStyles.buildCss(theme)
+    local settingsThemeChanged = cachedThemeCss ~= nextThemeCss
+
+    cachedThemeCss = nextThemeCss
+
     panel:setLevel(currentPanelLevel())
-    if panel:isShown() then
+    if settingsThemeChanged then
+      panel:markDirty()
+    end
+    if panel:isShown() and settingsThemeChanged then
       panel:refresh()
+      requestBoundsRecompute(panel)
+    elseif panel:isShown() then
+      pushSettingsWindowState(panel)
       requestBoundsRecompute(panel)
     end
   end

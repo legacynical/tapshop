@@ -8,6 +8,13 @@ var MOD_SYMBOLS = {
   shift: "⇧"
 };
 
+var MOD_TITLES = {
+  cmd: "Command",
+  alt: "Option",
+  ctrl: "Control",
+  shift: "Shift"
+};
+
 var KEY_LABELS = {
   left: "Left",
   right: "Right",
@@ -18,8 +25,16 @@ var KEY_LABELS = {
   forwarddelete: "Forward Delete",
   escape: "Esc",
   space: "Space",
-  tab: "Tab"
+  tab: "Tab",
+  BRIGHTNESS_UP: "Brightness Up",
+  BRIGHTNESS_DOWN: "Brightness Down",
+  SOUND_UP: "Volume Up",
+  SOUND_DOWN: "Volume Down",
+  PLAY: "Play/Pause",
+  LAUNCH_PANEL: "Launchpad"
 };
+
+var SYSTEM_KEY_DISPLAY = window.tapshopSystemKeyDisplay || {};
 
 var PHYSICAL_KEY_MAP = {
   Backquote: "`",
@@ -128,6 +143,9 @@ function clearValidationUi() {
     modalError.textContent = "";
     modalError.classList.add("is-hidden");
   }
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.remove("has-error");
+  }
 }
 
 function escapeHtml(value) {
@@ -151,9 +169,9 @@ function renderHotkeyRowHtml(row) {
   var comboClass = row.isAssigned ? "hotkey-combo" : "hotkey-combo hotkey-combo-empty";
   var comboInner = row.isAssigned ? comboHtml(row.mods, row.key) : '<span class="hotkey-unset">(unset)</span>';
   var resetHtml = row.isModified
-    ? '<button type="button" class="btn hotkey-btn hotkey-reset-btn" title="Reset row" onclick="resetBinding('
-      + JSON.stringify(row.id)
-      + ')">Reset</button>'
+    ? '<button type="button" class="btn hotkey-btn hotkey-reset-btn" title="Reset to default" data-hotkey-action="reset" data-hotkey-id="'
+      + escapeHtml(row.id)
+      + '">↺</button>'
     : "";
 
   return ''
@@ -171,8 +189,8 @@ function renderHotkeyRowHtml(row) {
     + '<div class="' + comboClass + '" title="' + escapeHtml(comboTitle) + '">' + comboInner + '</div>'
     + '</div>'
     + '<div class="hotkey-actions">'
-    + '<button type="button" class="btn hotkey-btn hotkey-remap-btn" title="Record shortcut" onclick="openRemapModal(' + JSON.stringify(row.id) + ')">Remap</button>'
     + resetHtml
+    + '<button type="button" class="btn hotkey-btn hotkey-remap-btn" title="Record shortcut" data-hotkey-action="remap" data-hotkey-id="' + escapeHtml(row.id) + '">Remap</button>'
     + '</div>'
     + '</div>';
 }
@@ -217,6 +235,10 @@ function showValidationUi(result) {
   if (remapState.open && remapState.errorEl) {
     remapState.errorEl.textContent = result.message;
     remapState.errorEl.classList.remove("is-hidden");
+    if (remapState.captureEl) {
+      remapState.captureEl.classList.add("has-error");
+    }
+    focusRemapCapture();
   }
 }
 
@@ -226,13 +248,60 @@ window.tapshopApplyValidation = function (result) {
 
 window.tapshopApplyHotkeyState = function (state) {
   state = state || {};
-  cancelRemapModal();
+  cancelRemapModal(true);
   renderHotkeyList(state.rows || []);
   document.body.setAttribute("data-settings-scroll-top", String(state.scrollTop || 0));
   filterHotkeyRows(getSearchValue());
   restoreSettingsScrollState();
   showValidationUi(state.validation || null);
   updateUiScale();
+};
+
+function applySettingsConfig(config) {
+  if (!config) return;
+  document.querySelectorAll("[data-settings-config]").forEach(function (el) {
+    var key = el.getAttribute("data-settings-config") || "";
+    if (!Object.prototype.hasOwnProperty.call(config, key)) return;
+    if (el.type === "checkbox") {
+      el.checked = !!config[key];
+      return;
+    }
+    el.value = String(config[key]);
+  });
+}
+
+window.tapshopApplySettingsWindowState = function (payload) {
+  payload = payload || {};
+
+  applySettingsConfig(payload.config || null);
+
+  var nextTab = payload.settingsTab === "hotkeys" ? "hotkeys" : "general";
+  setSettingsTabState(nextTab);
+
+  var input = getSearchInput();
+  if (input && typeof payload.search === "string" && input.value !== payload.search) {
+    input.value = payload.search;
+  }
+
+  document.body.setAttribute("data-settings-scroll-top", String(payload.scrollTop || 0));
+
+  if (Array.isArray(payload.hotkeys)) {
+    renderHotkeyList(payload.hotkeys);
+  }
+
+  filterHotkeyRows(getSearchValue());
+  restoreSettingsScrollState();
+  showValidationUi(payload.validation || null);
+  updateUiScale();
+};
+
+window.tapshopApplyRemapDraft = function (payload) {
+  payload = payload || {};
+  applyDraftBinding(Array.isArray(payload.mods) ? payload.mods.slice() : [], payload.key || null);
+};
+
+window.tapshopCancelRemapRecorder = function () {
+  cancelRemapModal(true);
 };
 
 function switchSettingsTab(tab) {
@@ -288,7 +357,30 @@ function normalizeKey(e) {
 }
 
 function displayKey(key) {
-  return KEY_LABELS[key] || String(key || "").toUpperCase();
+  var raw = String(key || "");
+  var systemMeta = SYSTEM_KEY_DISPLAY[raw];
+  if (systemMeta && systemMeta.label) return systemMeta.label;
+  if (KEY_LABELS[raw]) return KEY_LABELS[raw];
+  var systemCodeMatch = raw.match(/^SYSTEM_(\d+)$/);
+  if (systemCodeMatch) {
+    return "SYSTEM_" + systemCodeMatch[1];
+  }
+  if (/^[A-Z0-9_]+$/.test(raw) && raw.indexOf("_") !== -1) {
+    return raw
+      .toLowerCase()
+      .split("_")
+      .map(function (part) {
+        return part ? part.charAt(0).toUpperCase() + part.slice(1) : part;
+      })
+      .join(" ");
+  }
+  return raw.toUpperCase();
+}
+
+function keycapHtml(content, title, className) {
+  var classes = "keycap";
+  if (className) classes += " " + className;
+  return '<span class="' + classes + '" title="' + escapeHtml(title || "") + '">' + content + "</span>";
 }
 
 function comboHtml(mods, key) {
@@ -297,9 +389,16 @@ function comboHtml(mods, key) {
   }
   var parts = [];
   (mods || []).forEach(function (mod) {
-    parts.push('<span class="keycap">' + (MOD_SYMBOLS[mod] || mod) + '</span>');
+    parts.push(keycapHtml(escapeHtml(MOD_SYMBOLS[mod] || mod), MOD_TITLES[mod] || String(mod), ""));
   });
-  parts.push('<span class="keycap">' + displayKey(key) + "</span>");
+  var rawKey = String(key || "");
+  var systemMeta = SYSTEM_KEY_DISPLAY[rawKey];
+  if (systemMeta && systemMeta.label && systemMeta.svg) {
+    parts.push(keycapHtml(systemMeta.svg, systemMeta.label, "keycap-system"));
+  } else {
+    var label = displayKey(rawKey);
+    parts.push(keycapHtml(escapeHtml(label), label, ""));
+  }
   return parts.join("");
 }
 
@@ -335,27 +434,147 @@ var remapState = {
   cleared: false,
   shellEl: null,
   labelEl: null,
+  captureEl: null,
   currentEl: null,
   draftEl: null,
   errorEl: null,
-  saveEl: null
+  saveEl: null,
+  statusEl: null,
+  hintEl: null
 };
+
+function arraysEqual(left, right) {
+  var a = left || [];
+  var b = right || [];
+  if (a.length !== b.length) return false;
+  for (var index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
+function normalizeDraftMods(mods) {
+  var order = { cmd: 1, alt: 2, ctrl: 3, shift: 4 };
+  var seen = {};
+  var out = [];
+  (mods || []).forEach(function (mod) {
+    if (!order[mod] || seen[mod]) return;
+    seen[mod] = true;
+    out.push(mod);
+  });
+  out.sort(function (a, b) {
+    return order[a] - order[b];
+  });
+  return out;
+}
+
+function remapMatchesCurrent() {
+  if (remapState.cleared) {
+    return remapState.currentKey === false || remapState.currentKey == null || remapState.currentKey === "";
+  }
+  if (!remapState.draftKey) return false;
+  return remapState.currentKey === remapState.draftKey && arraysEqual(remapState.currentMods, remapState.draftMods);
+}
+
+function focusRemapCapture() {
+  if (!remapState.captureEl || !remapState.open) return;
+  if (typeof remapState.captureEl.focus === "function") {
+    try {
+      remapState.captureEl.focus({ preventScroll: true });
+    } catch (_err) {
+      remapState.captureEl.focus();
+    }
+  }
+}
 
 function syncRemapActionState() {
   if (!remapState.saveEl) return;
-  var canSave = remapState.cleared || remapState.draftKey;
+  var canSave = (remapState.cleared || remapState.draftKey) && !remapMatchesCurrent();
   remapState.saveEl.disabled = !canSave;
+}
+
+function renderRemapModifierState() {
+  document.querySelectorAll("[data-remap-mod]").forEach(function (button) {
+    var mod = button.getAttribute("data-remap-mod") || "";
+    var active = remapState.draftMods.indexOf(mod) !== -1;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function applyDraftBinding(mods, key) {
+  remapState.cleared = false;
+  remapState.draftMods = normalizeDraftMods(mods);
+  remapState.draftKey = key || null;
+  if (remapState.errorEl) {
+    remapState.errorEl.textContent = "";
+    remapState.errorEl.classList.add("is-hidden");
+  }
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.remove("has-error");
+  }
+  renderRemapPreview();
+  focusRemapCapture();
+}
+
+function toggleRemapMod(mod) {
+  var nextMods = remapState.draftMods.slice();
+  var index = nextMods.indexOf(mod);
+  if (index === -1) {
+    nextMods.push(mod);
+  } else {
+    nextMods.splice(index, 1);
+  }
+  applyDraftBinding(nextMods, remapState.draftKey);
+}
+
+function setComboPreview(el, mods, key, emptyText) {
+  if (!el) return;
+  if (key === false || key == null || key === "") {
+    el.innerHTML = '<span class="remap-preview-flow"><span class="hotkey-unset">' + escapeHtml(emptyText) + "</span></span>";
+    el.classList.add("is-empty");
+    return;
+  }
+  el.innerHTML = '<span class="remap-preview-flow">' + comboHtml(mods, key) + "</span>";
+  el.classList.remove("is-empty");
 }
 
 function renderRemapPreview() {
   if (!remapState.currentEl || !remapState.draftEl) return;
-  remapState.currentEl.innerHTML = comboHtml(remapState.currentMods, remapState.currentKey);
-  remapState.currentEl.classList.toggle("is-empty", !remapState.currentKey);
+  setComboPreview(remapState.currentEl, remapState.currentMods, remapState.currentKey, "Unbound");
 
   var draftKey = remapState.cleared ? false : remapState.draftKey;
   var draftMods = remapState.cleared ? [] : remapState.draftMods;
-  remapState.draftEl.innerHTML = comboHtml(draftMods, draftKey);
-  remapState.draftEl.classList.toggle("is-empty", !(remapState.cleared || remapState.draftKey));
+  if (remapState.cleared) {
+    setComboPreview(remapState.draftEl, [], false, "Will be unbound");
+  } else if (draftKey) {
+    setComboPreview(remapState.draftEl, draftMods, draftKey, "Press any shortcut");
+  } else {
+    setComboPreview(remapState.draftEl, [], false, "Press any shortcut");
+  }
+
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.toggle("is-armed", !remapState.cleared && !remapState.draftKey);
+    remapState.captureEl.classList.toggle("is-ready", !!remapState.draftKey);
+    remapState.captureEl.classList.toggle("is-cleared", remapState.cleared);
+  }
+  if (remapState.statusEl) {
+    remapState.statusEl.textContent = remapState.cleared ? "Unbinding" : (draftKey ? "Ready" : "Listening");
+  }
+  if (remapState.hintEl) {
+    if (remapState.cleared) {
+      remapState.hintEl.textContent = "Save to remove this shortcut.";
+    } else if (draftKey) {
+      remapState.hintEl.textContent = remapMatchesCurrent()
+        ? "This matches the current binding."
+        : "Press Save to apply this binding.";
+    } else if (draftMods.length > 0) {
+      remapState.hintEl.textContent = "Select a main key, media key, or system key.";
+    } else {
+      remapState.hintEl.textContent = "Press any key, media key, or system key.";
+    }
+  }
+  renderRemapModifierState();
   syncRemapActionState();
 }
 
@@ -369,8 +588,8 @@ function openRemapModal(id) {
   remapState.targetLabel = row.getAttribute("data-label") || "";
   remapState.currentKey = row.getAttribute("data-assigned") === "1" ? row.getAttribute("data-key") : false;
   remapState.currentMods = (row.getAttribute("data-mods") || "").split(" ").filter(Boolean);
-  remapState.draftMods = [];
-  remapState.draftKey = null;
+  remapState.draftMods = remapState.currentMods.slice();
+  remapState.draftKey = remapState.currentKey || null;
   remapState.cleared = false;
 
   remapState.labelEl.textContent = row.querySelector(".hotkey-label").textContent;
@@ -378,10 +597,13 @@ function openRemapModal(id) {
   remapState.errorEl.classList.add("is-hidden");
   remapState.shellEl.hidden = false;
   renderRemapPreview();
+  focusRemapCapture();
+  sendAction("openRemapRecorder", { id: id });
 }
 
-function cancelRemapModal() {
+function cancelRemapModal(skipNativeSync) {
   if (!remapState.open) return;
+  clearValidationUi();
   remapState.open = false;
   remapState.targetId = null;
   remapState.draftMods = [];
@@ -391,10 +613,16 @@ function cancelRemapModal() {
     remapState.errorEl.textContent = "";
     remapState.errorEl.classList.add("is-hidden");
   }
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.remove("is-armed", "is-ready", "is-cleared", "has-error");
+  }
   if (remapState.shellEl) remapState.shellEl.hidden = true;
+  if (!skipNativeSync) {
+    sendAction("cancelRemapRecorder");
+  }
 }
 
-function clearRemapBinding() {
+function unbindRemapBinding() {
   remapState.cleared = true;
   remapState.draftMods = [];
   remapState.draftKey = false;
@@ -402,7 +630,11 @@ function clearRemapBinding() {
     remapState.errorEl.textContent = "";
     remapState.errorEl.classList.add("is-hidden");
   }
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.remove("has-error");
+  }
   renderRemapPreview();
+  focusRemapCapture();
 }
 
 function saveRemapModal() {
@@ -694,7 +926,47 @@ function setGlobalCursor(cursor) {
   document.body.style.cursor = cursor || "";
 }
 
+var container = document.querySelector(".container");
 var header = document.querySelector(".header");
+var headerTooltip = document.querySelector(".header-tooltip");
+var tooltipTarget = null;
+
+function hideHeaderTooltip() {
+  tooltipTarget = null;
+  if (!headerTooltip) return;
+  headerTooltip.classList.remove("is-visible");
+  headerTooltip.textContent = "";
+}
+
+function showHeaderTooltip(el) {
+  if (!container || !headerTooltip || !el) return;
+  if (dragState.active || resizeState.active) return;
+
+  var tooltipText = el.getAttribute("data-tooltip") || "";
+  if (!tooltipText) {
+    hideHeaderTooltip();
+    return;
+  }
+
+  tooltipTarget = el;
+  headerTooltip.textContent = tooltipText;
+  headerTooltip.classList.add("is-visible");
+
+  var containerRect = container.getBoundingClientRect();
+  var buttonRect = el.getBoundingClientRect();
+  var style = window.getComputedStyle(container);
+  var paddingLeft = readPx(style.paddingLeft);
+  var paddingRight = readPx(style.paddingRight);
+  var tooltipRect = headerTooltip.getBoundingClientRect();
+  var minLeft = paddingLeft + 6;
+  var maxLeft = containerRect.width - tooltipRect.width - paddingRight - 6;
+  var centeredLeft = (buttonRect.left - containerRect.left) + (buttonRect.width / 2) - (tooltipRect.width / 2);
+  var left = Math.max(minLeft, Math.min(centeredLeft, maxLeft));
+  var top = (buttonRect.bottom - containerRect.top) + 6;
+
+  headerTooltip.style.left = left + "px";
+  headerTooltip.style.top = top + "px";
+}
 
 var dragState = {
   active: false,
@@ -709,6 +981,55 @@ var resizeState = {
   direction: ""
 };
 
+document.addEventListener("click", function (e) {
+  var hotkeyActionEl = e.target && e.target.closest ? e.target.closest("[data-hotkey-action]") : null;
+  if (hotkeyActionEl) {
+    var hotkeyAction = hotkeyActionEl.getAttribute("data-hotkey-action");
+    var hotkeyId = hotkeyActionEl.getAttribute("data-hotkey-id") || "";
+    e.preventDefault();
+    if (hotkeyAction === "remap") {
+      openRemapModal(hotkeyId);
+      return;
+    }
+    if (hotkeyAction === "reset") {
+      resetBinding(hotkeyId);
+      return;
+    }
+  }
+
+  var remapActionEl = e.target && e.target.closest ? e.target.closest("[data-remap-action]") : null;
+  if (remapActionEl) {
+    var remapAction = remapActionEl.getAttribute("data-remap-action");
+    e.preventDefault();
+    if (remapAction === "cancel") {
+      cancelRemapModal();
+      return;
+    }
+    if (remapAction === "unbind") {
+      unbindRemapBinding();
+      return;
+    }
+    if (remapAction === "save") {
+      saveRemapModal();
+    }
+  }
+
+  var remapModEl = e.target && e.target.closest ? e.target.closest("[data-remap-mod]") : null;
+  if (remapModEl) {
+    e.preventDefault();
+    toggleRemapMod(remapModEl.getAttribute("data-remap-mod") || "");
+    return;
+  }
+
+});
+
+document.addEventListener("mousedown", function (e) {
+  var captureEl = e.target && e.target.closest ? e.target.closest("[data-remap-capture]") : null;
+  if (!captureEl) return;
+  e.preventDefault();
+  focusRemapCapture();
+});
+
 document.addEventListener("mousedown", function (e) {
   if (e.button !== 0) return;
   var direction = getResizeDirection(e);
@@ -718,6 +1039,7 @@ document.addEventListener("mousedown", function (e) {
   resizeState.lastX = e.screenX;
   resizeState.lastY = e.screenY;
   setGlobalCursor(cursorForDirection(direction));
+  hideHeaderTooltip();
   sendAction("resizeStart", { direction: direction });
   e.preventDefault();
   e.stopPropagation();
@@ -730,6 +1052,7 @@ if (header) {
     dragState.active = true;
     dragState.lastX = e.screenX;
     dragState.lastY = e.screenY;
+    hideHeaderTooltip();
     sendAction("dragStart");
     e.preventDefault();
   });
@@ -781,34 +1104,32 @@ document.addEventListener("mouseleave", function () {
   setGlobalCursor("");
 });
 
+document.addEventListener("mousedown", function () {
+  hideHeaderTooltip();
+});
+
+document.querySelectorAll("[data-tooltip]").forEach(function (el) {
+  el.addEventListener("mouseenter", function () {
+    showHeaderTooltip(el);
+  });
+  el.addEventListener("mouseleave", function () {
+    if (tooltipTarget === el) hideHeaderTooltip();
+  });
+  el.addEventListener("focusin", function () {
+    showHeaderTooltip(el);
+  });
+  el.addEventListener("focusout", function () {
+    if (tooltipTarget === el) hideHeaderTooltip();
+  });
+});
+
 document.addEventListener("keydown", function (e) {
   if (remapState.open) {
     e.preventDefault();
     e.stopPropagation();
-
-    var modifierKeys = { Meta: true, Alt: true, Control: true, Shift: true };
-    if (modifierKeys[e.key]) return;
-
-    var mods = [];
-    if (e.metaKey) mods.push("cmd");
-    if (e.altKey) mods.push("alt");
-    if (e.ctrlKey) mods.push("ctrl");
-    if (e.shiftKey) mods.push("shift");
-
-    var key = normalizeKey(e);
-    if (key === "escape" && mods.length === 0) {
+    if (e.key === "Escape") {
       cancelRemapModal();
-      return;
     }
-
-    remapState.cleared = false;
-    remapState.draftMods = mods;
-    remapState.draftKey = key;
-    if (remapState.errorEl) {
-      remapState.errorEl.textContent = "";
-      remapState.errorEl.classList.add("is-hidden");
-    }
-    renderRemapPreview();
     return;
   }
 
@@ -827,10 +1148,13 @@ restoreSettingsScrollState();
 
 remapState.shellEl = document.querySelector("[data-remap-shell]");
 remapState.labelEl = document.querySelector("[data-remap-label]");
+remapState.captureEl = document.querySelector("[data-remap-capture]");
 remapState.currentEl = document.querySelector("[data-remap-current]");
 remapState.draftEl = document.querySelector("[data-remap-draft]");
 remapState.errorEl = document.querySelector("[data-remap-error]");
 remapState.saveEl = document.querySelector("[data-remap-save]");
+remapState.statusEl = document.querySelector("[data-remap-status]");
+remapState.hintEl = document.querySelector("[data-remap-hint]");
 ]=]
 
 return ClientScript

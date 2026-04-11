@@ -67,6 +67,10 @@ function WebviewPanel.new(opts)
     return isShown
   end
 
+  function panel:hasContent()
+    return cachedHtml ~= nil
+  end
+
   function panel:markDirty()
     isHtmlDirty = true
   end
