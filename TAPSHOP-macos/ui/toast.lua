@@ -32,8 +32,21 @@ function Toast.new(cfg)
       return nil
     end
 
+    local size = math.max(12, math.floor(lineHeight() * 0.95))
+
     if line.image then
       return line.image
+    end
+
+    local imagePath = line.imagePath
+    if type(imagePath) == "string"
+      and imagePath ~= ""
+      and hs.image
+      and hs.image.imageFromPath then
+      local image = hs.image.imageFromPath(imagePath)
+      if image then
+        return image:setSize({ h = size, w = size })
+      end
     end
 
     local bundleID = line.imageBundleID
@@ -53,7 +66,6 @@ function Toast.new(cfg)
       return nil
     end
 
-    local size = math.max(12, math.floor(lineHeight() * 0.95))
     return image:setSize({ h = size, w = size })
   end
 

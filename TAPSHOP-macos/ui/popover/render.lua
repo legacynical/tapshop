@@ -52,10 +52,13 @@ end
 
 function Render.buildHtml(ctx)
   local headerAppIcon = icons.appIconHtml(ctx.headerBundleID, ctx.headerAppName, "header-active-win-icon", 16)
+  local brandIcon = icons.tapshopBrandIconHtml("title-brand-icon", 16)
   local parts = {
     "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n",
     ctx.css,
-    "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-active-win\">",
+    "\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        ",
+    brandIcon,
+    "<span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-active-win\">",
     headerAppIcon,
     "<span class=\"header-active-win-title\">",
     html.escape(ctx.primaryLine),

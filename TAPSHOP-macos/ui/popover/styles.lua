@@ -101,6 +101,13 @@ input {
   border-radius: calc(4px * var(--ui-scale));
 }
 
+.title-brand-icon {
+  width: calc(16px * var(--ui-scale));
+  height: calc(16px * var(--ui-scale));
+  border-radius: calc(4px * var(--ui-scale));
+  flex-shrink: 0;
+}
+
 .title-trigger,
 .title-hop {
   display: inline-block;
@@ -300,8 +307,6 @@ input {
   font-size: calc(11px * var(--ui-scale));
   font-weight: 600;
   flex-shrink: 0;
-  box-shadow: 0 0 0 calc(1px * var(--ui-scale)) rgba(255, 80, 80, 0.9);
-  border-radius: calc(4px * var(--ui-scale));
 }
 
 .slot-label {
@@ -633,7 +638,7 @@ body[data-settings-tab="hotkeys"] .settings-panel[data-settings-panel="hotkeys"]
 }
 
 .hotkey-row.is-modified {
-  border-left-color: var(--warning);
+  border-left-color: rgba(255, 255, 255, 0.22);
 }
 
 .hotkey-row.has-conflict {
@@ -735,7 +740,14 @@ body[data-settings-tab="hotkeys"] .settings-panel[data-settings-panel="hotkeys"]
 }
 
 .hotkey-reset-btn {
-  color: #f0c97b;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: calc(12px * var(--ui-scale));
+  padding: calc(1px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  font-weight: bold;
+}
+
+.hotkey-reset-btn:hover {
+  color: #ffffff;
 }
 
 .remap-modal-shell[hidden] {

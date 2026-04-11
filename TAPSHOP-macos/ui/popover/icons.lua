@@ -1,4 +1,6 @@
 local html = require("ui.html")
+local assets = require("ui.assets")
+local hs = hs
 
 local Icons = {}
 local APP_ICON_URL_CACHE = {}
@@ -74,6 +76,30 @@ function Icons.appIconUrl(bundleID, size)
   return ok and encoded or nil
 end
 
+function Icons.imageUrlFromPath(imagePath, size)
+  if type(imagePath) ~= "string" or imagePath == "" or not hs.image or not hs.image.imageFromPath then
+    return nil
+  end
+
+  local cacheKey = table.concat({ "path", imagePath, tostring(size or 18) }, "::")
+  local cached = APP_ICON_URL_CACHE[cacheKey]
+  if cached ~= nil then
+    return cached ~= false and cached or nil
+  end
+
+  local image = hs.image.imageFromPath(imagePath)
+  if not image then
+    APP_ICON_URL_CACHE[cacheKey] = false
+    return nil
+  end
+
+  local ok, encoded = pcall(function()
+    return image:setSize({ h = size or 18, w = size or 18 }):encodeAsURLString()
+  end)
+  APP_ICON_URL_CACHE[cacheKey] = ok and encoded or false
+  return ok and encoded or nil
+end
+
 function Icons.appIconHtml(bundleID, appName, className, size)
   local iconUrl = Icons.appIconUrl(bundleID, size or 18)
   if not iconUrl then
@@ -87,6 +113,25 @@ function Icons.appIconHtml(bundleID, appName, className, size)
     .. '" alt="" aria-hidden="true" title="'
     .. html.escape(appName or "")
     .. '">'
+end
+
+function Icons.imagePathHtml(imagePath, className, size, title)
+  local iconUrl = Icons.imageUrlFromPath(imagePath, size or 18)
+  if not iconUrl then
+    return ""
+  end
+
+  return '<img class="'
+    .. html.escape(className or "slot-app-icon")
+    .. '" src="'
+    .. html.escape(iconUrl)
+    .. '" alt="" aria-hidden="true" title="'
+    .. html.escape(title or "")
+    .. '">'
+end
+
+function Icons.tapshopBrandIconHtml(className, size)
+  return Icons.imagePathHtml(assets.tapshopIconPath(), className or "title-brand-icon", size or 16, "TAPSHOP")
 end
 
 function Icons.slotAppIconHtml(bundleID, appName, className)
