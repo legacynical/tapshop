@@ -8,7 +8,22 @@ local AppState = {}
 AppState.__index = AppState
 local PAIR_TOAST_COLOR = { red = 0x7e / 255, green = 0xc8 / 255, blue = 0x7e / 255, alpha = 1 }
 local UNPAIR_TOAST_COLOR = { red = 0xc0 / 255, green = 0x40 / 255, blue = 0x30 / 255, alpha = 1 }
+local HOTKEY_WARNING_TOAST_COLOR = { red = 0xf2 / 255, green = 0xc1 / 255, blue = 0x4e / 255, alpha = 1 }
 local TOAST_WHITE = { white = 1, alpha = 1 }
+
+local function loadPersistedWorkspacePairings(settingsStore)
+  local key = configModule.keys.workspacePairings
+  local raw = hs.settings.get(key)
+  if raw == nil then
+    return {}
+  end
+  if type(raw) ~= "table" then
+    settingsStore.clearSetting(key)
+    return {}
+  end
+
+  return settingsStore.getWindowPairings(key)
+end
 
 function AppState.new(cfg, deps)
   local self = setmetatable({
@@ -297,7 +312,7 @@ function AppState:_persistWorkspacePairings()
 end
 
 function AppState:_restoreWorkspacePairings()
-  local pairings = self.settingsStore.getWindowPairings(configModule.keys.workspacePairings)
+  local pairings = loadPersistedWorkspacePairings(self.settingsStore)
   local restoredCount = 0
   for index, persisted in pairs(pairings) do
     local workspace = self:_getWorkspace(index)
@@ -899,6 +914,12 @@ function AppState:updateHotkeyBinding(id, payload)
   end
 
   local result = self.hotkeyManager:updateBinding(id, payload or {})
+  if result and result.ok and type(self.toast) == "function" and type(result.conflictIds) == "table" and #result.conflictIds > 0 then
+    self.toast(ToastMessage.plain(
+      result.message or "Shortcut saved. Conflicting TAPSHOP hotkeys were disabled until resolved.",
+      { color = HOTKEY_WARNING_TOAST_COLOR }
+    ))
+  end
   return result
 end
 
