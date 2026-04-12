@@ -137,13 +137,14 @@ function SettingsWindow.new(app, cfg, deps)
   end
 
   local function buildSettingsWindowStatePayload()
-    local hotkeyState = app:getHotkeyUiState()
+    -- Hotkey rows are intentionally omitted: they are always pre-baked into
+    -- the page HTML and kept current by pushHotkeyState after any binding
+    -- change, so re-sending them on every show is wasteful.
     return {
       settingsTab = state.tab,
       search = state.search,
       scrollTop = state.scrollTop or 0,
       validation = state.validation,
-      hotkeys = hotkeyState.rows or {},
       config = buildSettingsUiConfig(),
     }
   end
@@ -291,6 +292,22 @@ function SettingsWindow.new(app, cfg, deps)
       return
     end
 
+    -- Prefer injecting pre-built HTML: encoding one string is much cheaper
+    -- than encoding N row objects, and JS just sets innerHTML directly.
+    local htmlStr = app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached
+      and app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
+      or nil
+
+    if htmlStr then
+      local scrollTop = tostring(state.scrollTop or 0)
+      local validationJson = state.validation and (hs.json.encode(state.validation) or "null") or "null"
+      local htmlJson = hs.json.encode(htmlStr) or '""'
+      panelRef:evaluateJavaScript(
+        "window.tapshopApplyHotkeyHtml(" .. htmlJson .. "," .. scrollTop .. "," .. validationJson .. ")"
+      )
+      return
+    end
+
     local hotkeyState = app:getHotkeyUiState()
     local payload = hs.json.encode({
       rows = hotkeyState.rows or {},
@@ -303,21 +320,14 @@ function SettingsWindow.new(app, cfg, deps)
   local function buildRenderContext()
     local theme = popoverTheme.buildTheme(cfg)
     local css = cachedThemeCss or settingsStyles.buildCss(theme)
-    local shouldRenderHotkeys = state.tab == "hotkeys"
-    local hotkeyState = {
-      rows = {},
-      conflictsById = {},
-      overrides = {},
-    }
-    local hotkeysHtml = nil
-
-    if shouldRenderHotkeys then
-      hotkeyState = app:getHotkeyUiState()
-      if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
-        hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
-      else
-        hotkeysHtml = hotkeyList.buildHtml(hotkeyState.rows or {})
-      end
+    -- Always pre-bake hotkeys HTML regardless of active tab so that tab
+    -- switching is instant (pure CSS visibility toggle, no round-trip).
+    local hotkeyState = app:getHotkeyUiState()
+    local hotkeysHtml
+    if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
+      hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
+    else
+      hotkeysHtml = hotkeyList.buildHtml(hotkeyState.rows or {})
     end
 
     return {
@@ -507,9 +517,8 @@ function SettingsWindow.new(app, cfg, deps)
         hideRemapPanel()
         state.validation = nil
         state.tab = normalizeSettingsTab(body.settingsTab)
-        if state.tab == "hotkeys" then
-          pushHotkeyState(panelRef)
-        end
+        -- No pushHotkeyState needed: hotkeys HTML is always pre-baked into
+        -- the page, so the tab switch is a pure CSS visibility change.
         requestBoundsRecompute(panelRef)
         return
       end

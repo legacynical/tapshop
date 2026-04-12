@@ -257,6 +257,17 @@ window.tapshopApplyHotkeyState = function (state) {
   updateUiScale();
 };
 
+window.tapshopApplyHotkeyHtml = function (htmlStr, scrollTop, validation) {
+  cancelRemapModal(true);
+  var list = document.querySelector("[data-hotkeys-list]");
+  if (list) list.innerHTML = htmlStr || "";
+  document.body.setAttribute("data-settings-scroll-top", String(scrollTop || 0));
+  filterHotkeyRows(getSearchValue());
+  restoreSettingsScrollState();
+  showValidationUi(validation || null);
+  updateUiScale();
+};
+
 function applySettingsConfig(config) {
   if (!config) return;
   document.querySelectorAll("[data-settings-config]").forEach(function (el) {
