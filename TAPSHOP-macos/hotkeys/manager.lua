@@ -250,6 +250,7 @@ end
 
 function HotkeyManager:resolve()
   local overrides = self:_loadOverrides()
+  self._lastOverrides = overrides
   local resolvedById = {}
   for _, defaultBinding in ipairs(self.defaults) do
     local merged = cloneBinding(defaultBinding)
@@ -475,7 +476,7 @@ function HotkeyManager:_warningFor(binding)
 end
 
 function HotkeyManager:_buildUiRows()
-  local overrides = self:_loadOverrides()
+  local overrides = self._lastOverrides or self:_loadOverrides()
   local rows = {}
   for _, defaultBinding in ipairs(self.defaults) do
     local binding = self.resolvedById[defaultBinding.id]
@@ -501,11 +502,10 @@ end
 function HotkeyManager:_buildUiState()
   self:resolve()
   local rows = self:_buildUiRows()
-  local overrides = self:_loadOverrides()
   return {
     rows = rows,
     conflictsById = self.conflictsById,
-    overrides = overrides,
+    overrides = self._lastOverrides or {},
     recordingSupported = true,
   }
 end
