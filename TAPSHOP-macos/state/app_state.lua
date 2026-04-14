@@ -118,6 +118,7 @@ function AppState:_runPairingAction(actionFn)
   if self.cfg.popoverAutoHideAfterAction and self.popover and self.popover.hide then
     self.popover:hide()
   end
+  return true
 end
 
 function AppState:_runWorkspaceAction(actionFn)
@@ -658,16 +659,16 @@ end
 function AppState:pairSlot(index, sourceWindow)
   local workspace = self:_getWorkspace(index)
   if not workspace then
-    return
+    return false
   end
 
   local win = sourceWindow
   if not win then
     self.toast(ToastMessage.plain("No window to pair!"))
-    return
+    return false
   end
 
-  self:_runPairingAction(function()
+  return self:_runPairingAction(function()
     self:_pairWorkspace(workspace, win:id(), win)
     self.toast(self:_formatPairToast(workspace, win))
   end)
@@ -782,10 +783,10 @@ end
 function AppState:unpairSlot(index)
   local workspace = self:_getWorkspace(index)
   if not workspace then
-    return
+    return false
   end
 
-  self:_runPairingAction(function()
+  return self:_runPairingAction(function()
     if workspace:isPaired() or workspace:isRecoverable() then
       local win = self:_resolvePairedWindow(workspace)
       local toastPayload = self:_formatUnpairToast(workspace, win)
@@ -798,7 +799,7 @@ function AppState:unpairSlot(index)
 end
 
 function AppState:unpairAll()
-  self:_runPairingAction(function()
+  return self:_runPairingAction(function()
     for _, workspace in ipairs(self.workspaces) do
       workspace:clear()
     end

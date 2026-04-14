@@ -7,6 +7,11 @@ local popoverTheme = require("ui.popover.theme")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
+local AUTO_HIDE_ACTIONS = {
+  pair = true,
+  unpair = true,
+  unpairAll = true,
+}
 
 function Popover.new(app, cfg, deps)
   local windowService = deps.windowService
@@ -349,6 +354,9 @@ function Popover.new(app, cfg, deps)
       local result = app:handlePopoverAction(body)
       if action == "setAlwaysOnTop" then
         panelRef:setLevel(currentPopoverLevel())
+      end
+      if result ~= false and cfg.popoverAutoHideAfterAction and AUTO_HIDE_ACTIONS[action] then
+        panelRef:hide()
       end
       return result
     end,
