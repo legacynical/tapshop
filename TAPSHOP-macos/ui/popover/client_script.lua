@@ -23,6 +23,15 @@ function sendAction(action, extra) {
   window.webkit.messageHandlers.tapshop.postMessage(payload);
 }
 
+function focusKeyboardSurface() {
+  if (!document.body || typeof document.body.focus !== "function") return;
+  try {
+    document.body.focus({ preventScroll: true });
+  } catch (_) {
+    document.body.focus();
+  }
+}
+
 function setUiScale(scale) {
   document.documentElement.style.setProperty("--ui-scale", scale.toFixed(3));
 }
@@ -228,6 +237,8 @@ window.tapshopRecomputeBounds = function () {
   lastReportedBounds = null;
   updateUiScale();
 };
+
+window.tapshopFocusKeyboardSurface = focusKeyboardSurface;
 
 function getResizeDirection(e) {
   var nearLeft = e.clientX <= RESIZE_ZONE;
@@ -455,8 +466,10 @@ if (titleHop) {
   });
 }
 
+window.addEventListener("focus", focusKeyboardSurface);
 window.addEventListener("resize", updateUiScale);
 updateUiScale();
+focusKeyboardSurface();
 ]=]
 
 return ClientScript

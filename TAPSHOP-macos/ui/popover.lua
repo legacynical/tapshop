@@ -87,6 +87,32 @@ function Popover.new(app, cfg, deps)
     return hs.drawing.windowLevels.normal
   end
 
+  local function focusPanelWindow(panelRef)
+    if cfg.popoverAlwaysOnTop then
+      return
+    end
+
+    local view = panelRef and panelRef.getWebview and panelRef:getWebview() or nil
+    if not view then
+      return
+    end
+
+    if hs.focus then
+      hs.focus()
+    end
+
+    if view.bringToFront then
+      view:bringToFront(false)
+    end
+
+    if view.hswindow then
+      local win = view:hswindow()
+      if win and win.focus then
+        win:focus()
+      end
+    end
+  end
+
   local function saveTopLeftFromFrame(panelRef)
     local frame = panelRef:getWebview():frame()
     savedTopLeft = {
@@ -382,7 +408,9 @@ function Popover.new(app, cfg, deps)
       view:level(currentPopoverLevel())
     end,
     afterShow = function(panelRef)
+      focusPanelWindow(panelRef)
       requestBoundsRecompute(panelRef)
+      panelRef:evaluateJavaScript("window.tapshopFocusKeyboardSurface && window.tapshopFocusKeyboardSurface()")
     end,
     beforeHide = function()
       isDragging = false
