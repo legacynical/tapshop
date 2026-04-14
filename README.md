@@ -1,5 +1,4 @@
-<img width="1500" height="300" alt="TAPSHOP header aligned transparent" src="https://github.com/user-attachments/assets/205b3917-8222-482c-acf4-f01000c10142" />
-
+<img width="1280" height="200" alt="TAPSHOP header aligned transparent compact" src="https://github.com/user-attachments/assets/35c2b2dc-b9c2-404c-970f-0c3dd1c2078e" />
 
 **Targeted Application Pairing System w/ Hotkey Oriented Playback**
 
