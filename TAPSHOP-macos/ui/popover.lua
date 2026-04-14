@@ -25,6 +25,7 @@ function Popover.new(app, cfg, deps)
   local refreshTimer = nil
   local isDragging = false
   local isResizing = false
+  local isFocused = false
   local cachedThemeCss = nil
   local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
   local savedSize = popoverLayout.loadSavedSize(settingsStore, configModule.keys)
@@ -386,9 +387,12 @@ function Popover.new(app, cfg, deps)
       end
       return result
     end,
-    windowCallback = function(panelRef, act, _, state)
-      if act == "focusChange" and state == false and panelRef:isShown() and not cfg.popoverAlwaysOnTop then
-        panelRef:hide()
+    windowCallback = function(panelRef, act, _, focusState)
+      if act == "focusChange" then
+        isFocused = focusState == true
+        if focusState == false and panelRef:isShown() and not cfg.popoverAlwaysOnTop then
+          panelRef:hide()
+        end
       end
     end,
     beforeShow = function(_, view)
@@ -415,6 +419,7 @@ function Popover.new(app, cfg, deps)
     beforeHide = function()
       isDragging = false
       isResizing = false
+      isFocused = false
     end,
   })
 
@@ -430,6 +435,20 @@ function Popover.new(app, cfg, deps)
 
   function instance:toggle()
     panel:toggle()
+  end
+
+  function instance:toggleOrFocus()
+    if cfg.popoverAlwaysOnTop then
+      panel:toggle()
+      return
+    end
+
+    if panel:isShown() and isFocused then
+      panel:hide()
+      return
+    end
+
+    panel:show()
   end
 
   function instance:refreshIfShown()

@@ -808,6 +808,11 @@ function AppState:unpairAll()
 end
 
 function AppState:togglePopover()
+  if self.popover and self.popover.toggleOrFocus then
+    self.popover:toggleOrFocus()
+    return
+  end
+
   if self.popover and self.popover.toggle then
     self.popover:toggle()
   end
