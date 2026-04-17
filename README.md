@@ -9,11 +9,12 @@
 ## What It Does
 
 1. Window pairing slots (`1`-`9`) so one hotkey can jump back to a specific app window.
-2. Context-aware pair/focus/minimize flow:
+2. On macOS, profile banks (`F1`-`F12`) that swap which nine slots are active in the popover and hotkeys.
+3. Context-aware pair/focus/minimize flow:
    - First press pairs current window to slot.
    - Later press on same slot focuses paired window.
    - Double-tap while already focused to minimize (configurable).
-3. Global media-style controls:
+4. Global media-style controls:
    - YouTube seek/play targeting browser tabs by window title.
    - Spotify transport/seek/volume controls.
 ---
@@ -74,7 +75,7 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
 
 - `settings.json` for user-facing preferences and hotkey overrides
-- `appdata.json` for internal persisted state such as pairings and window geometry
+- `appdata.json` for internal persisted state such as pairings, window geometry, the active macOS profile, and each profile bank's saved slots
 
 ### Required Permissions (macOS)
 
@@ -90,6 +91,7 @@ TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
 
 | Hotkey | Action |
 |---|---|
+| Unbound by default | Profile switching can be assigned to `F1`-`F12` or any other preferred shortcuts |
 | `Cmd + Option + [1-9]` | Pair/focus/minimize slot `[1-9]` |
 | `Cmd + Option + Shift + [1-9]` | Unpair slot `[1-9]` |
 | `Cmd + Option + Shift + 0` | Unpair all slots |
@@ -98,7 +100,8 @@ TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
 | `Cmd + Option + Right/L` | YouTube forward `5s` / `10s` |
 | `Cmd + Option + K` | YouTube play/pause |
 | `F19/F20/F21` (+ Ctrl variants) | Optional YouTube bindings (if key exists) |
-| `F7/F8/F9` (+ Ctrl variants) | Optional Spotify media + seek bindings |
+| `F7/F8/F9` or remapped equivalents | Optional Spotify transport bindings |
+| `Ctrl + F7/F9` | Optional Spotify seek backward/forward |
 | `F22/F23/F24` | Optional Spotify like + volume bindings |
 | `Cmd + Option + Ctrl + ,/. / M` | System volume down/up/mute |
 
@@ -117,7 +120,7 @@ If you remap the popover shortcut away from `Cmd + Option + \``, TAPSHOP keeps a
 
 - YouTube targeting is title-based and browser-filtered. Expected title pattern includes ` - YouTube`; `Subscriptions - YouTube` is intentionally ignored.
 - Slot minimize behavior is threshold-based (`minimizeThreshold`), not immediate on first repeat press.
-- On macOS, slot pairings persist across Hammerspoon reloads/restarts. Closed paired windows can remain recoverable and relink automatically when a matching window returns, depending on settings.
+- On macOS, slot pairings persist across Hammerspoon reloads/restarts for each profile bank. Closed paired windows can remain recoverable and relink automatically when a matching window returns, depending on settings.
 - On Windows, Spotify transport is sent using `WM_APPCOMMAND`; on macOS it uses Hammerspoon Spotify APIs + AppleScript helpers.
 
 ---
