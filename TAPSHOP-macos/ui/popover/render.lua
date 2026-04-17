@@ -54,6 +54,26 @@ local function rowHtml(row, config)
     .. "      </div>\n"
 end
 
+local function profileSwitcherHtml(ctx)
+  local activeProfileId = tonumber(ctx.activeProfileId) or 1
+  local profileCount = tonumber(ctx.profileCount) or 1
+  if profileCount <= 1 then
+    return ""
+  end
+
+  return table.concat({
+    "<div class=\"profile-switcher\">",
+    "<button type=\"button\" class=\"profile-btn\" data-tooltip=\"Previous profile\" aria-label=\"Previous profile\" onclick=\"sendAction('activatePreviousProfile')\">&lsaquo;</button>",
+    "<span class=\"profile-label\" data-tooltip=\"Active profile\">P",
+    tostring(activeProfileId),
+    " / ",
+    tostring(profileCount),
+    "</span>",
+    "<button type=\"button\" class=\"profile-btn\" data-tooltip=\"Next profile\" aria-label=\"Next profile\" onclick=\"sendAction('activateNextProfile')\">&rsaquo;</button>",
+    "</div>",
+  })
+end
+
 function Render.buildHtml(ctx)
   local headerAppIcon = icons.appIconHtml(ctx.headerBundleID, ctx.headerAppName, "header-active-win-icon", 16)
   local brandIcon = icons.tapshopBrandIconHtml("title-brand-icon", 16)
@@ -67,6 +87,8 @@ function Render.buildHtml(ctx)
     "<span class=\"header-active-win-title\">",
     escapeHtml(ctx.primaryLine),
     "</span>\n      </div>\n      <div class=\"header-actions\">\n        ",
+    profileSwitcherHtml(ctx),
+    "\n        ",
     icons.headerIconButton({
       className = "header-danger",
       icon = "clearAll",

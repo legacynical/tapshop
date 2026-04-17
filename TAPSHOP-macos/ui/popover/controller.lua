@@ -120,6 +120,96 @@ function Popover.new(app, cfg, deps)
     end
   end
 
+  local function panelWindow(panelRef)
+    local view = panelRef and panelRef.getWebview and panelRef:getWebview() or nil
+    if not view or type(view.hswindow) ~= "function" then
+      return nil
+    end
+
+    local ok, win = pcall(view.hswindow, view)
+    if not ok then
+      return nil
+    end
+
+    return win
+  end
+
+  local function currentSpaceId()
+    if windowService and type(windowService.currentSpaceId) == "function" then
+      local ok, spaceId = pcall(windowService.currentSpaceId)
+      if ok and type(spaceId) == "number" then
+        return spaceId
+      end
+    end
+
+    local focusedSpaceFn = hs.spaces and hs.spaces.focusedSpace
+    if type(focusedSpaceFn) == "function" then
+      local ok, spaceId = pcall(focusedSpaceFn)
+      if ok and type(spaceId) == "number" then
+        return spaceId
+      end
+    end
+
+    local activeSpaceFn = hs.spaces and hs.spaces.activeSpaceOnScreen
+    if type(activeSpaceFn) == "function" then
+      local ok, spaceId = pcall(activeSpaceFn, hs.screen.mainScreen())
+      if ok and type(spaceId) == "number" then
+        return spaceId
+      end
+    end
+
+    return nil
+  end
+
+  local function windowSpaceIds(win)
+    if not win then
+      return nil
+    end
+
+    if windowService and type(windowService.getWindowSpaces) == "function" then
+      local ok, spaceIds = pcall(windowService.getWindowSpaces, win)
+      if ok and type(spaceIds) == "table" then
+        return spaceIds
+      end
+    end
+
+    local spacesFn = hs.spaces and hs.spaces.windowSpaces
+    if type(spacesFn) ~= "function" then
+      return nil
+    end
+
+    local ok, spaceIds = pcall(spacesFn, win)
+    if ok and type(spaceIds) == "table" then
+      return spaceIds
+    end
+
+    return nil
+  end
+
+  local function panelIsInCurrentSpace(panelRef)
+    if not panelRef:isShown() then
+      return false
+    end
+
+    local spaceId = currentSpaceId()
+    if type(spaceId) ~= "number" then
+      return nil
+    end
+
+    local spaceIds = windowSpaceIds(panelWindow(panelRef))
+    if type(spaceIds) ~= "table" then
+      return nil
+    end
+
+    for _, candidateSpaceId in ipairs(spaceIds) do
+      if candidateSpaceId == spaceId then
+        return true
+      end
+    end
+
+    return false
+  end
+
   local function saveTopLeftFromFrame(panelRef)
     local frame = panelRef:getWebview():frame()
     savedTopLeft = {
@@ -189,6 +279,8 @@ function Popover.new(app, cfg, deps)
       config = {
         hidePairButtons = cfg.popoverHidePairButtons == true,
       },
+      activeProfileId = app.getActiveProfileId and app:getActiveProfileId() or 1,
+      profileCount = app.getProfileCount and app:getProfileCount() or 1,
       rows = app:getWorkspaceRowModels(),
     }
   end
@@ -445,7 +537,16 @@ function Popover.new(app, cfg, deps)
 
   function instance:toggleOrFocus()
     if cfg.popoverAlwaysOnTop then
-      panel:toggle()
+      if panel:isShown() and panelIsInCurrentSpace(panel) == true then
+        panel:hide()
+        return
+      end
+
+      if panel:isShown() then
+        panel:hide()
+      end
+
+      panel:show()
       return
     end
 

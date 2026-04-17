@@ -286,6 +286,48 @@ input {
   border-radius: calc(4px * var(--ui-scale));
 }
 
+.profile-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(3px * var(--ui-scale));
+  padding: calc(1px * var(--ui-scale));
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: calc(6px * var(--ui-scale));
+}
+
+.profile-btn,
+.profile-label {
+  border: none;
+  border-radius: calc(4px * var(--ui-scale));
+  color: var(--text-strong);
+}
+
+.profile-btn {
+  min-width: calc(18px * var(--ui-scale));
+  height: calc(18px * var(--ui-scale));
+  padding: 0 calc(4px * var(--ui-scale));
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.profile-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.profile-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(46px * var(--ui-scale));
+  height: calc(18px * var(--ui-scale));
+  padding: 0 calc(6px * var(--ui-scale));
+  background: transparent;
+  font-size: calc(10px * var(--ui-scale));
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 .header-btn,
 .btn,
 .settings-tab {
@@ -305,6 +347,7 @@ input {
 }
 
 .header-btn:focus-visible,
+.profile-btn:focus-visible,
 .btn:focus-visible,
 .settings-tab:focus-visible,
 .hotkey-search:focus-visible {
