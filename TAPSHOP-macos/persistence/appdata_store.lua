@@ -4,11 +4,12 @@ local Paths = require("persistence.paths")
 
 local AppDataStore = {}
 
-local APPDATA_SCHEMA_VERSION = 1
+local APPDATA_SCHEMA_VERSION = 2
 local APPDATA_DEFAULTS = {
   schemaVersion = APPDATA_SCHEMA_VERSION,
   workspace = {
-    pairings = {},
+    activeProfileId = 1,
+    profiles = {},
   },
   windows = {
     popover = {
@@ -38,7 +39,25 @@ local function normalizeAppdata(raw)
   local source = type(raw) == "table" and raw or {}
 
   if type(source.workspace) == "table" then
-    normalized.workspace.pairings = Normalize.encodeWindowPairings(source.workspace.pairings)
+    normalized.workspace.activeProfileId = Normalize.normalizeActiveProfileId(source.workspace.activeProfileId)
+    normalized.workspace.profiles = Normalize.encodeProfileWindowPairings(
+      Normalize.normalizeProfileWindowPairings(source.workspace.profiles)
+    )
+
+    if next(normalized.workspace.profiles) == nil and type(source.workspace.profilePairings) == "table" then
+      normalized.workspace.profiles = Normalize.encodeProfileWindowPairings(
+        Normalize.normalizeProfileWindowPairings(source.workspace.profilePairings)
+      )
+    end
+
+    if next(normalized.workspace.profiles) == nil and type(source.workspace.pairings) == "table" then
+      local legacyPairings = Normalize.encodeWindowPairings(source.workspace.pairings)
+      if next(legacyPairings) ~= nil then
+        normalized.workspace.profiles["1"] = {
+          pairings = legacyPairings,
+        }
+      end
+    end
   end
 
   if type(source.windows) == "table" then
@@ -130,16 +149,62 @@ function AppDataStore.bootstrap()
   return clone(appdata)
 end
 
+function AppDataStore.getActiveProfileId()
+  ensureInitialized()
+  return Normalize.normalizeActiveProfileId(appdata.workspace.activeProfileId)
+end
+
+function AppDataStore.setActiveProfileId(profileId)
+  ensureInitialized()
+  appdata.workspace.activeProfileId = Normalize.normalizeActiveProfileId(profileId)
+  persist()
+  return AppDataStore.getActiveProfileId()
+end
+
+function AppDataStore.getProfilesWindowPairings()
+  ensureInitialized()
+  return Normalize.normalizeProfileWindowPairings(appdata.workspace.profiles)
+end
+
+function AppDataStore.setProfilesWindowPairings(profiles)
+  ensureInitialized()
+  appdata.workspace.profiles = Normalize.encodeProfileWindowPairings(profiles)
+  persist()
+  return AppDataStore.getProfilesWindowPairings()
+end
+
 function AppDataStore.getWindowPairings()
   ensureInitialized()
-  return Normalize.normalizeWindowPairings(appdata.workspace.pairings)
+  local profileId = AppDataStore.getActiveProfileId()
+  local profiles = AppDataStore.getProfilesWindowPairings()
+  return Normalize.normalizeWindowPairings(profiles[profileId])
 end
 
 function AppDataStore.setWindowPairings(pairings)
   ensureInitialized()
-  appdata.workspace.pairings = clone(pairings)
+  local profileId = AppDataStore.getActiveProfileId()
+  local profiles = AppDataStore.getProfilesWindowPairings()
+  profiles[profileId] = Normalize.normalizeWindowPairings(pairings)
+  appdata.workspace.profiles = Normalize.encodeProfileWindowPairings(profiles)
   persist()
   return AppDataStore.getWindowPairings()
+end
+
+function AppDataStore.getProfileWindowPairings(profileId)
+  ensureInitialized()
+  local normalizedProfileId = Normalize.normalizeActiveProfileId(profileId)
+  local profiles = AppDataStore.getProfilesWindowPairings()
+  return Normalize.normalizeWindowPairings(profiles[normalizedProfileId])
+end
+
+function AppDataStore.setProfileWindowPairings(profileId, pairings)
+  ensureInitialized()
+  local normalizedProfileId = Normalize.normalizeActiveProfileId(profileId)
+  local profiles = AppDataStore.getProfilesWindowPairings()
+  profiles[normalizedProfileId] = Normalize.normalizeWindowPairings(pairings)
+  appdata.workspace.profiles = Normalize.encodeProfileWindowPairings(profiles)
+  persist()
+  return AppDataStore.getProfileWindowPairings(normalizedProfileId)
 end
 
 function AppDataStore.getPopoverTopLeft()

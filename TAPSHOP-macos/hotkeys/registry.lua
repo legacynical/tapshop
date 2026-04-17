@@ -1,9 +1,24 @@
 local Registry = {}
+local Layout = require("state.layout")
 
 local function buildBindings()
   local bindings = {}
 
-  for i = 1, 9 do
+  for i = 1, Layout.MAX_PROFILES do
+    bindings[#bindings + 1] = {
+      id = "profiles.activate." .. tostring(i),
+      group = "Profiles",
+      label = "Switch to Profile " .. tostring(i),
+      mods = {},
+      key = false,
+      action = "activateProfile",
+      args = { i },
+      guarded = true,
+      enabled = true,
+    }
+  end
+
+  for i = 1, Layout.SLOTS_PER_PROFILE do
     bindings[#bindings + 1] = {
       id = "slots.activate." .. tostring(i),
       group = "Window Slots",
@@ -17,7 +32,7 @@ local function buildBindings()
     }
   end
 
-  for i = 1, 9 do
+  for i = 1, Layout.SLOTS_PER_PROFILE do
     bindings[#bindings + 1] = {
       id = "slots.unpair." .. tostring(i),
       group = "Window Slots",

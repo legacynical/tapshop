@@ -1,6 +1,7 @@
 local Workspace = require("state.workspace")
 local SlotRecord = require("state.slot_record")
 local SlotRow = require("state.slot_row")
+local Layout = require("state.layout")
 local Toast = require("ui.toast")
 
 local AppState = {}
@@ -11,10 +12,16 @@ local HOTKEY_WARNING_TOAST_COLOR = { red = 0xf2 / 255, green = 0xc1 / 255, blue 
 local TOAST_WHITE = { white = 1, alpha = 1 }
 
 local function loadPersistedWorkspacePairings(appdata)
-  return appdata.getWindowPairings()
+  if appdata.getProfilesWindowPairings then
+    return appdata.getProfilesWindowPairings()
+  end
+  return {
+    [1] = appdata.getWindowPairings(),
+  }
 end
 
 function AppState.new(cfg, deps)
+  local initialProfileId = deps.appdata.getActiveProfileId and deps.appdata.getActiveProfileId() or 1
   local self = setmetatable({
     cfg = cfg,
     settings = deps.settings,
@@ -24,23 +31,34 @@ function AppState.new(cfg, deps)
     spotifyService = deps.spotifyService,
     systemAudioService = deps.systemAudioService,
     toast = deps.toast,
-    workspaces = {},
+    profiles = {},
     session = {
       focusedSpaceId = nil,
+      activeProfileId = initialProfileId,
     },
     hotkeyManager = nil,
     popover = nil,
     settingsWindow = nil,
   }, AppState)
 
-  for i = 1, 9 do
-    self.workspaces[#self.workspaces + 1] = Workspace.new(i, "Window " .. tostring(i), cfg.minimizeThreshold)
+  for profileId = 1, Layout.MAX_PROFILES do
+    local profile = {
+      id = profileId,
+      name = "Profile " .. tostring(profileId),
+      workspaces = {},
+    }
+    for slotIndex = 1, Layout.SLOTS_PER_PROFILE do
+      profile.workspaces[#profile.workspaces + 1] = Workspace.new(
+        slotIndex,
+        string.format("Profile %d / Window %d", profileId, slotIndex),
+        cfg.minimizeThreshold
+      )
+    end
+    self.profiles[#self.profiles + 1] = profile
   end
 
   self:_refreshFocusedSpaceId()
-  self:_restoreWorkspacePairings()
-
-  self:_persistWorkspacePairings()
+  self:_restoreStartupWorkspaceState()
   return self
 end
 
@@ -54,11 +72,40 @@ function AppState:attachHotkeyManager(hotkeyManager)
 end
 
 function AppState:getWorkspaces()
-  return self.workspaces
+  local profile = self:_getActiveProfile()
+  return profile and profile.workspaces or {}
 end
 
 function AppState:getConfig()
   return self.cfg
+end
+
+function AppState:_getProfile(profileId)
+  local normalized = tonumber(profileId)
+  if not normalized then
+    return nil
+  end
+  normalized = math.floor(normalized)
+  if normalized < 1 or normalized > #self.profiles then
+    return nil
+  end
+  return self.profiles[normalized]
+end
+
+function AppState:_getActiveProfile()
+  return self:_getProfile(self.session.activeProfileId)
+end
+
+function AppState:_forEachWorkspace(visitor)
+  if type(visitor) ~= "function" then
+    return
+  end
+
+  for _, profile in ipairs(self.profiles) do
+    for _, workspace in ipairs(profile.workspaces or {}) do
+      visitor(workspace, profile)
+    end
+  end
 end
 
 function AppState:_refreshFocusedSpaceId()
@@ -70,9 +117,17 @@ end
 
 function AppState:getWorkspaceRowModels()
   self:_refreshFocusedSpaceId()
-  return SlotRow.buildRows(self.workspaces, self.session, {
+  return SlotRow.buildRows(self:getWorkspaces(), self.session, {
     windowService = self.windowService,
   })
+end
+
+function AppState:getProfileCount()
+  return #self.profiles
+end
+
+function AppState:getActiveProfileId()
+  return self.session.activeProfileId
 end
 
 function AppState:getWindowInfo(win)
@@ -119,8 +174,12 @@ function AppState:_runWorkspaceAction(actionFn)
   self:syncUi()
 end
 
-function AppState:_getWorkspace(index)
-  return self.workspaces[index]
+function AppState:_getWorkspace(index, profileId)
+  local profile = self:_getProfile(profileId or self.session.activeProfileId)
+  if not profile then
+    return nil
+  end
+  return profile.workspaces[index]
 end
 
 function AppState:_resolvePairedWindow(workspace)
@@ -278,13 +337,43 @@ function AppState:_restorePairedWorkspaceFromRecord(workspace, persisted)
     return true
   end
 
+  if self.cfg.recoverClosedWindows and type(persisted.fingerprint) == "table" then
+    local fingerprint = persisted.fingerprint
+    if fingerprint.bundleID and fingerprint.titleNormalized then
+      workspace:setRecoverable(fingerprint)
+      return false
+    end
+  end
+
   workspace:clear()
   return false
 end
 
-function AppState:_workspacePairingSnapshot()
+function AppState:_restoreWorkspaceFromPersistedRecord(workspace, persisted)
+  if not workspace or type(persisted) ~= "table" then
+    return false
+  end
+
+  if persisted.kind == "paired" then
+    return self:_restorePairedWorkspaceFromRecord(workspace, persisted)
+  end
+
+  if persisted.kind == "recoverable" then
+    if self.cfg.recoverClosedWindows then
+      workspace:setRecoverable(persisted.fingerprint)
+    else
+      workspace:clear()
+    end
+    return false
+  end
+
+  workspace:clear()
+  return false
+end
+
+function AppState:_workspacePairingSnapshot(profile)
   local pairings = {}
-  for index, workspace in ipairs(self.workspaces) do
+  for index, workspace in ipairs((profile and profile.workspaces) or {}) do
     if workspace then
       local record = SlotRecord.encode(workspace.binding)
       if record then
@@ -295,29 +384,36 @@ function AppState:_workspacePairingSnapshot()
   return pairings
 end
 
+function AppState:_profilePairingSnapshot()
+  local profiles = {}
+  for _, profile in ipairs(self.profiles) do
+    local pairings = self:_workspacePairingSnapshot(profile)
+    if next(pairings) ~= nil then
+      profiles[profile.id] = pairings
+    end
+  end
+  return profiles
+end
+
 function AppState:_persistWorkspacePairings()
-  self.appdata.setWindowPairings(self:_workspacePairingSnapshot())
+  if self.appdata.setProfilesWindowPairings then
+    self.appdata.setProfilesWindowPairings(self:_profilePairingSnapshot())
+    return
+  end
+
+  self.appdata.setWindowPairings(self:_workspacePairingSnapshot(self:_getActiveProfile()))
 end
 
 function AppState:_restoreWorkspacePairings()
   local pairings = loadPersistedWorkspacePairings(self.appdata)
   local restoredCount = 0
-  for index, persisted in pairs(pairings) do
-    local workspace = self:_getWorkspace(index)
-    if workspace then
-      if type(persisted) == "table" then
-        if persisted.kind == "paired" then
-          if self:_restorePairedWorkspaceFromRecord(workspace, persisted) then
-            restoredCount = restoredCount + 1
-          end
-        elseif persisted.kind == "recoverable" then
-          if self.cfg.recoverClosedWindows then
-            workspace:setRecoverable(persisted.fingerprint)
-          else
-            workspace:clear()
-          end
-        else
-          workspace:clear()
+  for profileId, profilePairings in pairs(pairings) do
+    local profile = self:_getProfile(profileId)
+    if profile then
+      for index, persisted in pairs(profilePairings or {}) do
+        local workspace = self:_getWorkspace(index, profile.id)
+        if self:_restoreWorkspaceFromPersistedRecord(workspace, persisted) then
+          restoredCount = restoredCount + 1
         end
       end
     end
@@ -359,12 +455,12 @@ function AppState:_refreshPairedWorkspaceMetadataForWindow(win)
 
   local meta = self.windowService.pairingMetadata(win)
   local matchedWorkspace = false
-  for _, workspace in ipairs(self.workspaces) do
+  self:_forEachWorkspace(function(workspace)
     if workspace:getBaseWindowId() == id or workspace:getFullscreenTargetWindowId() == id then
       matchedWorkspace = true
       workspace:setFingerprint(meta)
     end
-  end
+  end)
 
   return matchedWorkspace
 end
@@ -383,15 +479,6 @@ function AppState:_pairWorkspace(workspace, windowId, win)
       lastKnownSpaceId = spaceId,
     })
   end
-end
-
-function AppState:_slotIndexForWorkspace(workspace)
-  for index, candidate in ipairs(self.workspaces) do
-    if candidate == workspace then
-      return index
-    end
-  end
-  return nil
 end
 
 function AppState:_updateWorkspaceBindingSpaceState(workspace, win)
@@ -521,44 +608,84 @@ function AppState:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId)
 end
 
 function AppState:_isWindowAlreadyPaired(windowId)
-  for _, workspace in ipairs(self.workspaces) do
+  local paired = false
+  self:_forEachWorkspace(function(workspace)
     if workspace:getBaseWindowId() == windowId or workspace:getFullscreenTargetWindowId() == windowId then
-      return true
+      paired = true
     end
-  end
-  return false
+  end)
+  return paired
 end
 
-function AppState:_restoreWorkspaceFromCandidate(win)
+function AppState:_restoreRecoverableWorkspacesForCandidate(win)
   if not self.cfg.recoverClosedWindows then
-    return false
+    return {}
   end
 
   if not self.windowService.isCandidateWindow or not self.windowService.isCandidateWindow(win) then
-    return false
+    return {}
   end
 
   local candidateMeta = self.windowService.pairingMetadata(win)
   local candidateId = win:id()
   if not candidateMeta or not candidateId or self:_isWindowAlreadyPaired(candidateId) then
-    return false
+    return {}
   end
 
   local restoredWorkspaces = {}
-  for _, workspace in ipairs(self.workspaces) do
+  self:_forEachWorkspace(function(workspace)
     if workspace:canRecover()
       and workspace:matchesRecoveryCandidate(candidateMeta) then
       self:_pairWorkspace(workspace, candidateId, win)
       restoredWorkspaces[#restoredWorkspaces + 1] = workspace
     end
-  end
+  end)
 
+  return restoredWorkspaces
+end
+
+function AppState:_restoreWorkspaceFromCandidate(win, opts)
+  local restoredWorkspaces = self:_restoreRecoverableWorkspacesForCandidate(win)
   if #restoredWorkspaces > 0 then
-    self:_persistWorkspacePairings()
-    self.toast(self:_formatRestoreToast(restoredWorkspaces, win))
+    if not (type(opts) == "table" and opts.persist == false) then
+      self:_persistWorkspacePairings()
+    end
+    if not (type(opts) == "table" and opts.notify == false) then
+      self.toast(self:_formatRestoreToast(restoredWorkspaces, win))
+    end
     return true
   end
   return false
+end
+
+function AppState:_restoreRecoverableWorkspacesFromExistingCandidates()
+  if not self.cfg.recoverClosedWindows then
+    return false
+  end
+
+  if not self.windowService.candidateWindows then
+    return false
+  end
+
+  local candidates = self.windowService:candidateWindows() or {}
+  local restored = false
+  for _, win in ipairs(candidates) do
+    local restoredWorkspaces = self:_restoreRecoverableWorkspacesForCandidate(win)
+    if #restoredWorkspaces > 0 then
+      restored = true
+    end
+  end
+
+  return restored
+end
+
+function AppState:_restoreStartupWorkspaceState()
+  self:_restoreWorkspacePairings()
+  self:_restoreRecoverableWorkspacesFromExistingCandidates()
+  self:_persistWorkspacePairings()
+  if self.appdata.setActiveProfileId then
+    self.appdata.setActiveProfileId(self.session.activeProfileId)
+  end
 end
 
 function AppState:_formatPairToast(workspace, win)
@@ -626,12 +753,12 @@ end
 
 function AppState:_clearRecoverableWorkspaces()
   local changed = false
-  for _, workspace in ipairs(self.workspaces) do
+  self:_forEachWorkspace(function(workspace)
     if workspace:isRecoverable() then
       workspace:clear()
       changed = true
     end
-  end
+  end)
   return changed
 end
 
@@ -787,11 +914,46 @@ end
 
 function AppState:unpairAll()
   return self:_runPairingAction(function()
-    for _, workspace in ipairs(self.workspaces) do
-      workspace:clear()
+    local cleared = false
+    for _, workspace in ipairs(self:getWorkspaces()) do
+      if workspace:isPaired() or workspace:isRecoverable() then
+        workspace:clear()
+        cleared = true
+      end
     end
-    self.toast(Toast.message.plain("[Unpaired All Windows]"))
+    self.toast(Toast.message.plain(cleared and "[Unpaired All Windows]" or "[No Paired Windows]"))
   end)
+end
+
+function AppState:activateProfile(profileId)
+  local profile = self:_getProfile(profileId)
+  if not profile or profile.id == self.session.activeProfileId then
+    return false
+  end
+
+  self.session.activeProfileId = profile.id
+  if self.appdata.setActiveProfileId then
+    self.appdata.setActiveProfileId(profile.id)
+  end
+  self:syncUi()
+  self.toast(Toast.message.plain(string.format("[Active Profile: %d]", profile.id)))
+  return true
+end
+
+function AppState:activatePreviousProfile()
+  local profileId = self.session.activeProfileId - 1
+  if profileId < 1 then
+    profileId = self:getProfileCount()
+  end
+  return self:activateProfile(profileId)
+end
+
+function AppState:activateNextProfile()
+  local profileId = self.session.activeProfileId + 1
+  if profileId > self:getProfileCount() then
+    profileId = 1
+  end
+  return self:activateProfile(profileId)
 end
 
 function AppState:togglePopover()
@@ -954,7 +1116,7 @@ function AppState:handleWindowEvent(event, win)
     local basePairingChanged = false
     local fullscreenStateChanged = false
     local closedWindowToast = nil
-    for _, workspace in ipairs(self.workspaces) do
+    self:_forEachWorkspace(function(workspace)
       if workspace:getFullscreenTargetWindowId() == deadId and workspace:getBaseWindowId() ~= deadId then
         workspace:clearFullscreenState()
         fullscreenStateChanged = true
@@ -962,14 +1124,14 @@ function AppState:handleWindowEvent(event, win)
       if workspace:getBaseWindowId() == deadId then
         if workspace:hasTrackedFullscreenTarget()
           and workspace:getFullscreenTargetWindowId() ~= deadId then
-          goto continue_window_destroy
+          return
         end
         if workspace:hasTrackedFullscreenTarget()
           and workspace:getFullscreenTargetWindowId() == deadId
           and self.windowService.isWindowFullscreen(win) then
           workspace:clearFullscreenState()
           fullscreenStateChanged = true
-          goto continue_window_destroy
+          return
         end
         if self.cfg.recoverClosedWindows then
           workspace:markClosedForRecovery()
@@ -979,8 +1141,7 @@ function AppState:handleWindowEvent(event, win)
         end
         basePairingChanged = true
       end
-      ::continue_window_destroy::
-    end
+    end)
 
     if basePairingChanged then
       self:_persistWorkspacePairings()
@@ -1001,7 +1162,7 @@ function AppState:handleWindowEvent(event, win)
     end
     self:_refreshFocusedSpaceId()
     local winId = win:id()
-    for _, workspace in ipairs(self.workspaces) do
+    self:_forEachWorkspace(function(workspace)
       if workspace:getBaseWindowId() == winId then
         local spaceId = self:_updateWorkspaceBindingSpaceState(workspace, win)
         local fullscreenTarget = self:_findFullscreenCompanion(workspace, win, spaceId) or win
@@ -1011,7 +1172,7 @@ function AppState:handleWindowEvent(event, win)
           lastKnownSpaceId = spaceId,
         })
       end
-    end
+    end)
     self:_persistWorkspacePairings()
     self:syncUi()
     return
@@ -1023,7 +1184,7 @@ function AppState:handleWindowEvent(event, win)
     end
     self:_refreshFocusedSpaceId()
     local winId = win:id()
-    for _, workspace in ipairs(self.workspaces) do
+    self:_forEachWorkspace(function(workspace)
       if workspace:getFullscreenTargetWindowId() == winId then
         local spaceId = self:_updateWorkspaceBindingSpaceState(workspace, win)
         workspace:clearFullscreenState()
@@ -1037,7 +1198,7 @@ function AppState:handleWindowEvent(event, win)
           workspace:setBaseSpaceId(spaceId)
         end
       end
-    end
+    end)
     self:_persistWorkspacePairings()
     self:syncUi()
     return
@@ -1076,7 +1237,7 @@ local POPOVER_ACTIONS = {}
 
 local function slotAction(self, body, method)
   local slot = tonumber(body.slot) or 0
-  if slot >= 1 and slot <= 9 then
+  if slot >= 1 and slot <= Layout.SLOTS_PER_PROFILE then
     method(self, slot, body.sourceWindow)
   end
 end
@@ -1095,6 +1256,21 @@ end
 
 POPOVER_ACTIONS["toggleSettingsWindow"] = function(self)
   self:toggleSettingsWindow()
+end
+
+POPOVER_ACTIONS["activateProfile"] = function(self, body)
+  local profileId = tonumber(body.profile)
+  if profileId then
+    self:activateProfile(profileId)
+  end
+end
+
+POPOVER_ACTIONS["activatePreviousProfile"] = function(self)
+  self:activatePreviousProfile()
+end
+
+POPOVER_ACTIONS["activateNextProfile"] = function(self)
+  self:activateNextProfile()
 end
 
 POPOVER_ACTIONS["setAutoHideAfterAction"] = function(self, body)

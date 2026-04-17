@@ -1,4 +1,5 @@
 local SlotRecord = require("state.slot_record")
+local Layout = require("state.layout")
 
 local Normalize = {}
 
@@ -271,7 +272,7 @@ function Normalize.normalizeWindowPairings(value)
 
   for rawSlot, rawPairing in pairs(value) do
     local slot = Normalize.normalizePositiveInteger(tonumber(rawSlot))
-    if slot and slot >= 1 and slot <= 9 then
+    if slot and slot >= 1 and slot <= Layout.SLOTS_PER_PROFILE then
       local record = SlotRecord.normalize(rawPairing)
       if record then
         out[slot] = record
@@ -290,10 +291,63 @@ function Normalize.encodeWindowPairings(pairings)
 
   for rawSlot, rawPairing in pairs(pairings) do
     local slot = Normalize.normalizePositiveInteger(tonumber(rawSlot))
-    if slot and slot >= 1 and slot <= 9 then
+    if slot and slot >= 1 and slot <= Layout.SLOTS_PER_PROFILE then
       local record = SlotRecord.normalize(rawPairing)
       if record then
         payload[tostring(slot)] = record
+      end
+    end
+  end
+
+  return payload
+end
+
+function Normalize.normalizeActiveProfileId(value)
+  local profileId = Normalize.normalizePositiveInteger(tonumber(value))
+  if not profileId or profileId > Layout.MAX_PROFILES then
+    return 1
+  end
+  return profileId
+end
+
+function Normalize.normalizeProfileWindowPairings(value)
+  local out = {}
+  if type(value) ~= "table" then
+    return out
+  end
+
+  for rawProfileId, rawProfile in pairs(value) do
+    local profileId = Normalize.normalizePositiveInteger(tonumber(rawProfileId))
+    if profileId and profileId >= 1 and profileId <= Layout.MAX_PROFILES then
+      local pairingsSource = rawProfile
+      if type(rawProfile) == "table" and type(rawProfile.pairings) == "table" then
+        pairingsSource = rawProfile.pairings
+      end
+
+      local pairings = Normalize.normalizeWindowPairings(pairingsSource)
+      if next(pairings) ~= nil then
+        out[profileId] = pairings
+      end
+    end
+  end
+
+  return out
+end
+
+function Normalize.encodeProfileWindowPairings(profiles)
+  local payload = {}
+  if type(profiles) ~= "table" then
+    return payload
+  end
+
+  for rawProfileId, rawProfile in pairs(profiles) do
+    local profileId = Normalize.normalizePositiveInteger(tonumber(rawProfileId))
+    if profileId and profileId >= 1 and profileId <= Layout.MAX_PROFILES then
+      local pairings = Normalize.encodeWindowPairings(rawProfile)
+      if next(pairings) ~= nil then
+        payload[tostring(profileId)] = {
+          pairings = pairings,
+        }
       end
     end
   end
