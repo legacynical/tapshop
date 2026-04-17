@@ -71,6 +71,11 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 3. Add `require("TAPSHOP")` to your `~/.hammerspoon/init.lua`
 4. Reload Hammerspoon config (⌘ + ⇧ + R from menu bar, or `hs.reload()`)
 
+TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
+
+- `settings.json` for user-facing preferences and hotkey overrides
+- `appdata.json` for internal persisted state such as pairings and window geometry
+
 ### Required Permissions (macOS)
 
 1. Grant Hammerspoon Accessibility access in `System Settings -> Privacy & Security -> Accessibility`.
