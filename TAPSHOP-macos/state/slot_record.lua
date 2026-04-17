@@ -81,7 +81,7 @@ local function normalizeV2Record(raw)
   }
 
   if kind == "paired" then
-    local baseWindowId = positiveInt(raw.baseWindowId or raw.windowId)
+    local baseWindowId = positiveInt(raw.baseWindowId)
     if not baseWindowId then
       return nil
     end
@@ -108,64 +108,8 @@ local function normalizeV2Record(raw)
   return record
 end
 
-local function normalizeLegacyRecord(raw)
-  if type(raw) == "number" then
-    local baseWindowId = positiveInt(raw)
-    if not baseWindowId then
-      return nil
-    end
-    return {
-      version = 2,
-      kind = "paired",
-      baseWindowId = baseWindowId,
-    }
-  end
-
-  if type(raw) ~= "table" then
-    return nil
-  end
-
-  local baseWindowId = positiveInt(raw.baseWindowId or raw.windowId)
-  local fingerprint = normalizeFingerprint(raw)
-  local hasRecoveryMarker = type(raw.closedAt) == "number"
-
-  if baseWindowId then
-    local record = {
-      version = 2,
-      kind = "paired",
-      baseWindowId = baseWindowId,
-    }
-    local baseSpaceId = positiveInt(raw.baseSpaceId)
-    if baseSpaceId then
-      record.baseSpaceId = baseSpaceId
-    end
-    local fullscreenTarget = normalizeFullscreenTarget(raw.fullscreenTarget)
-    if fullscreenTarget then
-      record.fullscreenTarget = fullscreenTarget
-    end
-    if fingerprint then
-      record.fingerprint = fingerprint
-    end
-    return record
-  end
-
-  if fingerprint and fingerprint.bundleID and fingerprint.titleNormalized and hasRecoveryMarker then
-    return {
-      version = 2,
-      kind = "recoverable",
-      fingerprint = fingerprint,
-    }
-  end
-
-  return nil
-end
-
 function SlotRecord.normalize(raw)
-  local record = normalizeV2Record(raw)
-  if record then
-    return record
-  end
-  return normalizeLegacyRecord(raw)
+  return normalizeV2Record(raw)
 end
 
 function SlotRecord.encode(binding)
