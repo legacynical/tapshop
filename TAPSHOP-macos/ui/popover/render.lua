@@ -1,8 +1,12 @@
-local html = require("ui.html")
-local icons = require("ui.popover.icons")
+local icons = require("ui.icons")
 local hs = hs
 
 local Render = {}
+
+local function escapeHtml(text)
+  local value = tostring(text or "")
+  return (value:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
+end
 
 local function rowHtml(row, config)
   config = config or {}
@@ -20,7 +24,7 @@ local function rowHtml(row, config)
     elseif row.state == "fullscreen" then
       badgeClass = badgeClass .. " is-fullscreen"
     end
-    badgeHtml = '<span class="' .. badgeClass .. '">' .. html.escape(row.badgeText) .. "</span>"
+    badgeHtml = '<span class="' .. badgeClass .. '">' .. escapeHtml(row.badgeText) .. "</span>"
   end
 
   if not hidePairButtons then
@@ -41,7 +45,7 @@ local function rowHtml(row, config)
     .. "        <span class=\"slot-label " .. row.className .. "\"><span class=\"slot-text-bg\">"
     .. appIcon
     .. "<span class=\"slot-text\">"
-    .. html.escape(row.label)
+    .. escapeHtml(row.label)
     .. "</span>"
     .. "</span>"
     .. badgeHtml
@@ -56,12 +60,12 @@ function Render.buildHtml(ctx)
   local parts = {
     "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n",
     ctx.css,
-    "\n  </style>\n</head>\n<body tabindex=\"0\">\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        ",
+    "\n  </style>\n</head>\n<body tabindex=\"0\">\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"title-wrap\">\n        <button class=\"title-logo\" type=\"button\" aria-label=\"Tapshop\">",
     brandIcon,
-    "<span class=\"title\"><span class=\"title-trigger\">TAPS</span><span class=\"title-hop\">HOP</span></span>\n      </div>\n      <div class=\"header-active-win\">",
+    "</button>\n      </div>\n      <div class=\"header-active-win\">",
     headerAppIcon,
     "<span class=\"header-active-win-title\">",
-    html.escape(ctx.primaryLine),
+    escapeHtml(ctx.primaryLine),
     "</span>\n      </div>\n      <div class=\"header-actions\">\n        ",
     icons.headerIconButton({
       className = "header-danger",

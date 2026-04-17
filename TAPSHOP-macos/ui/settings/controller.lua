@@ -1,17 +1,24 @@
 local clientScript = require("ui.settings.client_script")
-local configModule = require("config")
-local hotkeyList = require("ui.settings.hotkey_list")
-local settingsLayout = require("ui.settings.layout")
+local panelLayout = require("ui.panel_layout")
 local settingsRender = require("ui.settings.render")
 local settingsStyles = require("ui.settings.styles")
-local popoverTheme = require("ui.popover.theme")
-local Utils = require("utils")
+local popoverStyles = require("ui.popover.styles")
+local Normalize = require("persistence.normalize")
 local webviewPanel = require("ui.webview_panel")
 
 local SettingsWindow = {}
+local settingsLayout = panelLayout.create({
+  defaultSize = { w = 420, h = 320 },
+  minWidth = 420,
+  targetMinHeight = 320,
+  viewportBaseHeight = 240,
+  loadSavedSize = function(appdata)
+    return appdata.getSettingsWindowSize()
+  end,
+})
 
 function SettingsWindow.new(app, cfg, deps)
-  local settingsStore = deps.settingsStore
+  local appdata = deps.appdata
 
   local panel = nil
   local cachedThemeCss = nil
@@ -26,8 +33,8 @@ function SettingsWindow.new(app, cfg, deps)
     scrollTop = 0,
     validation = nil,
   }
-  local savedTopLeft = settingsStore.getPoint(configModule.keys.settingsTopLeft)
-  local savedSize = settingsLayout.loadSavedSize(settingsStore, configModule.keys)
+  local savedTopLeft = appdata.getSettingsWindowTopLeft()
+  local savedSize = settingsLayout.loadSavedSize(appdata)
   local runtimeBounds = settingsLayout.initialRuntimeBounds()
   local pushHotkeyState = nil
   local stopRemapRecorder = nil
@@ -98,7 +105,7 @@ function SettingsWindow.new(app, cfg, deps)
       x = math.floor(frame.x),
       y = math.floor(frame.y),
     }
-    settingsStore.setPoint(configModule.keys.settingsTopLeft, savedTopLeft)
+    appdata.setSettingsWindowTopLeft(savedTopLeft)
   end
 
   local function saveSize(size, screen)
@@ -108,7 +115,7 @@ function SettingsWindow.new(app, cfg, deps)
       runtimeBounds
     )
     savedSize = clamped
-    settingsStore.setSize(configModule.keys.settingsSize, clamped)
+    appdata.setSettingsWindowSize(clamped)
     return clamped
   end
 
@@ -132,7 +139,7 @@ function SettingsWindow.new(app, cfg, deps)
       alwaysOnTop = cfg.popoverAlwaysOnTop == true,
       hidePairButtons = cfg.popoverHidePairButtons == true,
       recoverClosedWindows = cfg.recoverClosedWindows == true,
-      opacityPercent = (theme and theme.opacityPercent) or popoverTheme.buildTheme(cfg).opacityPercent,
+      opacityPercent = (theme and theme.opacityPercent) or popoverStyles.buildTheme(cfg).opacityPercent,
     }
   end
 
@@ -203,10 +210,10 @@ function SettingsWindow.new(app, cfg, deps)
     end
     if event.getType and event:getType() == hs.eventtap.event.types.systemDefined then
       local info = event.systemKey and event:systemKey() or {}
-      if not Utils.isSystemKeyPress(info) then
+      if not Normalize.isSystemKeyPress(info) then
         return nil
       end
-      return Utils.normalizeSystemKeyInfo(info)
+      return Normalize.normalizeSystemKeyInfo(info)
     end
     if not event.getKeyCode then
       return nil
@@ -231,7 +238,7 @@ function SettingsWindow.new(app, cfg, deps)
     end
 
     if keyCode >= 128 then
-      return Utils.normalizeRawKeyCode(keyCode)
+      return Normalize.normalizeRawKeyCode(keyCode)
     end
 
     local raw = hs.keycodes.map[keyCode]
@@ -295,7 +302,7 @@ function SettingsWindow.new(app, cfg, deps)
     -- Prefer injecting pre-built HTML: encoding one string is much cheaper
     -- than encoding N row objects, and JS just sets innerHTML directly.
     local htmlStr = app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached
-      and app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
+      and app.hotkeyManager:getHotkeyHtmlCached(settingsRender.buildHotkeyListHtml)
       or nil
 
     if htmlStr then
@@ -318,16 +325,16 @@ function SettingsWindow.new(app, cfg, deps)
   end
 
   local function buildRenderContext()
-    local theme = popoverTheme.buildTheme(cfg)
+    local theme = popoverStyles.buildTheme(cfg)
     local css = cachedThemeCss or settingsStyles.buildCss(theme)
     -- Always pre-bake hotkeys HTML regardless of active tab so that tab
     -- switching is instant (pure CSS visibility toggle, no round-trip).
     local hotkeyState = app:getHotkeyUiState()
     local hotkeysHtml
     if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
-      hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(hotkeyList.buildHtml)
+      hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(settingsRender.buildHotkeyListHtml)
     else
-      hotkeysHtml = hotkeyList.buildHtml(hotkeyState.rows or {})
+      hotkeysHtml = settingsRender.buildHotkeyListHtml(hotkeyState.rows or {})
     end
 
     return {
@@ -562,7 +569,7 @@ function SettingsWindow.new(app, cfg, deps)
         view:frame(geometryRect(frame))
         if frame.x ~= savedTopLeft.x or frame.y ~= savedTopLeft.y then
           savedTopLeft = { x = frame.x, y = frame.y }
-          settingsStore.setPoint(configModule.keys.settingsTopLeft, savedTopLeft)
+          appdata.setSettingsWindowTopLeft(savedTopLeft)
         end
       else
         view:frame(geometryRect(settingsLayout.centeredFrame(
@@ -642,11 +649,11 @@ function SettingsWindow.new(app, cfg, deps)
   end
 
   function instance:warmStaticCaches()
-    local theme = popoverTheme.buildTheme(cfg)
+    local theme = popoverStyles.buildTheme(cfg)
     cachedThemeCss = settingsStyles.buildCss(theme)
 
     if app.warmHotkeyUiCache then
-      app:warmHotkeyUiCache(hotkeyList.buildHtml)
+      app:warmHotkeyUiCache(settingsRender.buildHotkeyListHtml)
     end
   end
 

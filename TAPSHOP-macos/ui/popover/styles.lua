@@ -1,5 +1,120 @@
 local Styles = {}
 
+function Styles.buildTheme(cfg)
+  local opacityPercent = math.floor((cfg.popoverBackgroundOpacity or 0.85) * 100 + 0.5)
+
+  return {
+    opacityPercent = opacityPercent,
+    popoverBgCss = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100),
+    spacing = {
+      container = "10px",
+      shellGap = "6px",
+      headerGap = "10px",
+      headerPaddingBottom = "7px",
+      titleWrapGap = "8px",
+      headerDetailsGap = "3px",
+      headerActionsGap = "6px",
+      rowGap = "4px",
+      listGap = "3px",
+      slotLabelGap = "6px",
+      slotNumMarginRight = "8px",
+      pillX = "8px",
+      pillY = "2px",
+      minBadgeX = "5px",
+      minBadgeY = "1px",
+      buttonX = "11px",
+      buttonY = "4px",
+      headerButtonX = "12px",
+      headerButtonY = "5px",
+      configPanelMarginTop = "6px",
+      configPanelX = "10px",
+      configPanelY = "8px",
+      configItemGap = "7px",
+      configSliderGap = "4px",
+      configSliderMarginTop = "8px",
+      configSliderRowGap = "6px",
+      configTriggerX = "10px",
+      configTriggerY = "5px",
+      tooltipX = "6px",
+      tooltipY = "3px",
+    },
+    sizing = {
+      slotNumWidth = "18px",
+      headerActionWidth = "30px",
+      headerActionHeight = "26px",
+      headerIconSize = "14px",
+      configPanelMinWidth = "180px",
+      configPanelMaxWidthInset = "24px",
+    },
+    radius = {
+      panel = "12px",
+      button = "4px",
+      configPanel = "6px",
+      pill = "999px",
+      tooltip = "5px",
+    },
+    typography = {
+      body = "13px",
+      title = "14px",
+      headerPrimary = "11px",
+      headerSecondary = "7px",
+      slot = "12px",
+      slotNum = "11px",
+      minBadge = "9px",
+      button = "11px",
+      tooltip = "10px",
+    },
+    colors = {
+      textBase = "#e0e0e0",
+      textPrimary = "#fff",
+      textMuted = "#9aa0a6",
+      textClose = "#777",
+      textCloseHover = "#aaa",
+      textConfig = "#d2d2d2",
+      textConfigHover = "#f0f0f0",
+      textConfigItem = "#c6c6c6",
+      textButtonMuted = "#bbb",
+      textTooltip = "#f5f7fa",
+      textDebugLabel = "#111",
+      paired = "#7ec87e",
+      pairedMinimized = "#e7c84f",
+      unpaired = "#555",
+      surfacePanel = string.format("rgba(24, 24, 24, %.2f)", opacityPercent / 100),
+      surfacePill = "rgba(0, 0, 0, 0.14)",
+      surfacePrimary = "#2d6ee6",
+      surfacePrimaryHover = "#4080f0",
+      surfaceNeutral = "#444",
+      surfaceNeutralHover = "#555",
+      surfaceDanger = "#a03020",
+      surfaceDangerHover = "#c04030",
+      surfaceClose = "#2a2a2a",
+      surfaceCloseHover = "#3a3a3a",
+      surfaceConfig = "#4b4b4b",
+      surfaceConfigHover = "#5a5a5a",
+      surfaceTooltip = "rgba(10, 10, 10, 0.94)",
+      surfaceConfigPanel = "#171717",
+      borderPanel = "rgba(255, 255, 255, 0.06)",
+      borderConfigPanel = "#3c3c3c",
+      borderMinBadge = "rgba(231, 200, 79, 0.32)",
+      bgMinBadge = "rgba(231, 200, 79, 0.16)",
+      focusRing = "rgba(120, 168, 255, 0.92)",
+    },
+    effects = {
+      panelShadow = "inset 0 1px 0 rgba(255, 255, 255, 0.04)",
+      configPanelShadow = "0 12px 24px rgba(0, 0, 0, 0.45)",
+      backdrop = "blur(10px) saturate(115%)",
+      pillBackdrop = "blur(1.5px)",
+      transitionFast = "opacity 0.12s",
+      tooltipTransition = "opacity 0.12s ease",
+    },
+    zIndex = {
+      configPanel = "5",
+      tooltip = "6",
+      debugLabel = "2",
+    },
+  }
+end
+
 local function rootVars(theme)
   local c = theme.colors
   local opacity = math.max(0.84, (theme.opacityPercent or 85) / 100)
@@ -61,7 +176,7 @@ input {
   flex-direction: column;
   gap: calc(4px * var(--ui-scale));
   height: 100%;
-  padding: calc(10px * var(--ui-scale));
+  padding: calc(6px * var(--ui-scale));
   background: var(--panel-bg);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -74,7 +189,7 @@ input {
 .header {
   display: flex;
   align-items: flex-start;
-  gap: calc(10px * var(--ui-scale));
+  gap: calc(4px * var(--ui-scale));
   padding-bottom: calc(4px * var(--ui-scale));
   border-bottom: 1px solid #333;
   cursor: move;
@@ -84,45 +199,39 @@ input {
 .title-wrap {
   display: inline-flex;
   align-items: center;
-  gap: calc(8px * var(--ui-scale));
   flex: 0 0 auto;
   align-self: stretch;
 }
 
-.title {
+.title-logo {
   display: inline-flex;
   align-items: center;
-  height: 100%;
-  font-weight: 700;
-  font-size: calc(11px * var(--ui-scale));
-  color: var(--text-strong);
-  letter-spacing: 0.5px;
-  line-height: 1.1;
-  border-radius: calc(4px * var(--ui-scale));
+  justify-content: center;
+  width: calc(20px * var(--ui-scale));
+  height: calc(20px * var(--ui-scale));
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: calc(6px * var(--ui-scale));
+  cursor: pointer;
+  transform-origin: center bottom;
+  transition: transform 90ms ease;
+}
+
+.title-logo.is-pressed {
+  transform: translateY(calc(1.5px * var(--ui-scale))) scale(0.97);
+}
+
+.title-logo.is-hopping {
+  animation: hop-cartoon 700ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .title-brand-icon {
-  width: calc(16px * var(--ui-scale));
-  height: calc(16px * var(--ui-scale));
-  border-radius: calc(4px * var(--ui-scale));
+  width: 100%;
+  height: 100%;
+  border-radius: calc(6px * var(--ui-scale));
   flex-shrink: 0;
-}
-
-.title-trigger,
-.title-hop {
-  display: inline-block;
-}
-
-.title-trigger {
-  cursor: pointer;
-}
-
-.title-hop {
-  transform-origin: center bottom;
-}
-
-.title-hop.is-hopping {
-  animation: hop-cartoon 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
 @keyframes hop-cartoon {
@@ -138,14 +247,17 @@ input {
 .header-active-win {
   display: flex;
   align-items: center;
-  gap: calc(6px * var(--ui-scale));
+  gap: calc(2px * var(--ui-scale));
   flex: 1 1 auto;
   min-width: 0;
-  margin-top: auto;
+  min-height: calc(20px * var(--ui-scale));
+  padding: 0 calc(2px * var(--ui-scale));
   font-size: calc(11px * var(--ui-scale));
   font-weight: 600;
   color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.06);
   border-radius: calc(4px * var(--ui-scale));
+  overflow: hidden;
 }
 
 .header-active-win-title {

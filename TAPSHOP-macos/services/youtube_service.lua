@@ -1,6 +1,6 @@
 local YoutubeService = {}
 YoutubeService.__index = YoutubeService
-local ToastMessage = require("ui.toast_message")
+local Toast = require("ui.toast")
 
 local keyStrokeMap = {
   ["{Left}"] = "left",
@@ -73,7 +73,7 @@ function YoutubeService:handleWindowCandidate(win)
     if self.ytTargetId ~= id then
       self.ytTargetId = id
       local app = win:application()
-      self.toast(ToastMessage.windowAction({
+      self.toast(Toast.message.windowAction({
         prefixText = "YT Target Updated: ",
         titleText = win:title() or "[untitled]",
         bundleID = app and app:bundleID() or nil,
@@ -114,7 +114,7 @@ end
 function YoutubeService:sendCommand(keyPress)
   local target = self:getTargetWindow()
   if not target then
-    self.toast(ToastMessage.status("YouTube window not found."))
+    self.toast(Toast.message.status("YouTube window not found."))
     return {
       ok = false,
       code = "target_missing",
@@ -134,7 +134,7 @@ function YoutubeService:sendCommand(keyPress)
   local previousWindow = hs.window.frontmostWindow()
   local focusResult = self.windowService.ensureFrontmost(target, self.cfg)
   if not focusResult.ok then
-    self.toast(ToastMessage.status("Focus failed for YT window"))
+    self.toast(Toast.message.status("Focus failed for YT window"))
     return {
       ok = false,
       code = "focus_failed",

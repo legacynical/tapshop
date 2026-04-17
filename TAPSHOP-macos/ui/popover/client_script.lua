@@ -274,8 +274,7 @@ var container = document.querySelector(".container");
 var header = document.querySelector(".header");
 var headerActions = document.querySelector(".header-actions");
 var headerTooltip = document.querySelector(".header-tooltip");
-var titleTrigger = document.querySelector(".title-trigger");
-var titleHop = document.querySelector(".title-hop");
+var titleLogo = document.querySelector(".title-logo");
 var tooltipTarget = null;
 var titleTapTimestamps = [];
 
@@ -318,10 +317,15 @@ function showHeaderTooltip(el) {
 }
 
 function triggerTitleHop() {
-  if (!titleHop) return;
-  titleHop.classList.remove("is-hopping");
-  void titleHop.offsetWidth;
-  titleHop.classList.add("is-hopping");
+  if (!titleLogo) return;
+  titleLogo.classList.remove("is-hopping");
+  void titleLogo.offsetWidth;
+  titleLogo.classList.add("is-hopping");
+}
+
+function setTitleLogoPressed(pressed) {
+  if (!titleLogo) return;
+  titleLogo.classList.toggle("is-pressed", pressed);
 }
 
 var dragState = {
@@ -358,7 +362,7 @@ if (header) {
     if (
       e.target
       && e.target.closest
-      && e.target.closest(".header-actions, .title-trigger, button, input, label")
+      && e.target.closest(".header-actions, .title-logo, button, input, label")
     ) return;
     dragState.active = true;
     dragState.lastX = e.screenX;
@@ -392,6 +396,8 @@ window.addEventListener("mousemove", function (e) {
 });
 
 window.addEventListener("mouseup", function () {
+  setTitleLogoPressed(false);
+
   if (dragState.active) {
     dragState.active = false;
     sendAction("dragEnd");
@@ -442,12 +448,22 @@ document.querySelectorAll("[data-tooltip]").forEach(function (el) {
   });
 });
 
-if (titleTrigger) {
-  titleTrigger.addEventListener("mousedown", function (e) {
+if (titleLogo) {
+  titleLogo.addEventListener("mousedown", function (e) {
     if (e.button !== 0) return;
+    setTitleLogoPressed(true);
     e.stopPropagation();
   });
-  titleTrigger.addEventListener("click", function () {
+
+  titleLogo.addEventListener("mouseleave", function () {
+    setTitleLogoPressed(false);
+  });
+
+  titleLogo.addEventListener("blur", function () {
+    setTitleLogoPressed(false);
+  });
+
+  titleLogo.addEventListener("click", function () {
     var now = Date.now();
     titleTapTimestamps.push(now);
     titleTapTimestamps = titleTapTimestamps.filter(function (ts) {
@@ -458,11 +474,9 @@ if (titleTrigger) {
       triggerTitleHop();
     }
   });
-}
 
-if (titleHop) {
-  titleHop.addEventListener("animationend", function () {
-    titleHop.classList.remove("is-hopping");
+  titleLogo.addEventListener("animationend", function () {
+    titleLogo.classList.remove("is-hopping");
   });
 }
 

@@ -1,9 +1,7 @@
 local clientScript = require("ui.popover.client_script")
-local configModule = require("config")
-local popoverLayout = require("ui.popover.layout")
+local panelLayout = require("ui.panel_layout")
 local popoverRender = require("ui.popover.render")
 local popoverStyles = require("ui.popover.styles")
-local popoverTheme = require("ui.popover.theme")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
@@ -12,10 +10,18 @@ local AUTO_HIDE_ACTIONS = {
   unpair = true,
   unpairAll = true,
 }
+local popoverLayout = panelLayout.create({
+  defaultSize = { w = 500, h = 273 },
+  minWidth = 150,
+  targetMinHeight = 125,
+  loadSavedSize = function(appdata)
+    return appdata.getPopoverSize()
+  end,
+})
 
 function Popover.new(app, cfg, deps)
   local windowService = deps.windowService
-  local settingsStore = deps.settingsStore
+  local appdata = deps.appdata
 
   local panel = nil
   local callerWin = nil
@@ -27,8 +33,8 @@ function Popover.new(app, cfg, deps)
   local isResizing = false
   local isFocused = false
   local cachedThemeCss = nil
-  local savedTopLeft = settingsStore.getPoint(configModule.keys.popoverTopLeft)
-  local savedSize = popoverLayout.loadSavedSize(settingsStore, configModule.keys)
+  local savedTopLeft = appdata.getPopoverTopLeft()
+  local savedSize = popoverLayout.loadSavedSize(appdata)
   local runtimeBounds = popoverLayout.initialRuntimeBounds()
 
   local function pickScreen()
@@ -120,7 +126,7 @@ function Popover.new(app, cfg, deps)
       x = math.floor(frame.x),
       y = math.floor(frame.y),
     }
-    settingsStore.setPoint(configModule.keys.popoverTopLeft, savedTopLeft)
+    appdata.setPopoverTopLeft(savedTopLeft)
   end
 
   local function saveSize(size, screen)
@@ -130,7 +136,7 @@ function Popover.new(app, cfg, deps)
       runtimeBounds
     )
     savedSize = clamped
-    settingsStore.setSize(configModule.keys.popoverMainSize, clamped)
+    appdata.setPopoverSize(clamped)
     return clamped
   end
 
@@ -168,7 +174,7 @@ function Popover.new(app, cfg, deps)
   end
 
   local function buildRenderContext()
-    local theme = popoverTheme.buildTheme(cfg)
+    local theme = popoverStyles.buildTheme(cfg)
     local primaryLine, headerBundleID, headerAppName = currentHeaderLines()
     local css = cachedThemeCss or popoverStyles.buildCss(theme)
 
@@ -404,7 +410,7 @@ function Popover.new(app, cfg, deps)
         view:frame(geometryRect(frame))
         if frame.x ~= savedTopLeft.x or frame.y ~= savedTopLeft.y then
           savedTopLeft = { x = frame.x, y = frame.y }
-          settingsStore.setPoint(configModule.keys.popoverTopLeft, savedTopLeft)
+          appdata.setPopoverTopLeft(savedTopLeft)
         end
       else
         view:frame(centeredRect(screen))
@@ -470,7 +476,7 @@ function Popover.new(app, cfg, deps)
   end
 
   function instance:warmStaticCaches()
-    local theme = popoverTheme.buildTheme(cfg)
+    local theme = popoverStyles.buildTheme(cfg)
     cachedThemeCss = popoverStyles.buildCss(theme)
   end
 
