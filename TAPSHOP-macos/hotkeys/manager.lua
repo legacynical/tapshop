@@ -176,6 +176,38 @@ local function modsFromFlags(flags)
   return normalizeConflictMods(mods)
 end
 
+local function eventFlags(event)
+  local merged = {}
+
+  if event and event.getFlags then
+    local ok, flags = pcall(event.getFlags, event)
+    if ok and type(flags) == "table" then
+      for key, value in pairs(flags) do
+        if value then
+          merged[key] = true
+        end
+      end
+    end
+  end
+
+  if event
+    and event.getType
+    and event:getType() == hs.eventtap.event.types.systemDefined
+    and hs.eventtap
+    and type(hs.eventtap.checkKeyboardModifiers) == "function" then
+    local ok, liveFlags = pcall(hs.eventtap.checkKeyboardModifiers)
+    if ok and type(liveFlags) == "table" then
+      for key, value in pairs(liveFlags) do
+        if value then
+          merged[key] = true
+        end
+      end
+    end
+  end
+
+  return merged
+end
+
 local function comboIsAssignable(mods, key)
   if not keyIsAvailable(key) then
     return false, "missing_key"
@@ -296,12 +328,64 @@ function HotkeyManager.new(app, settings)
   return self
 end
 
+function HotkeyManager:_sanitizeOverrides(overrides)
+  local source = type(overrides) == "table" and overrides or {}
+  local sanitized = {}
+  local changed = false
+
+  for id, rawOverride in pairs(source) do
+    local defaultBinding = self.defaultsById[id]
+    if not defaultBinding then
+      changed = true
+    else
+      local merged = cloneBinding(defaultBinding)
+
+      if type(rawOverride) == "table" then
+        if rawOverride.mods ~= nil then
+          merged.mods = normalizeConflictMods(rawOverride.mods)
+        end
+        if rawOverride.key ~= nil then
+          local normalizedKey = Normalize.normalizeKey(rawOverride.key)
+          if normalizedKey ~= nil then
+            merged.key = normalizedKey
+          end
+        end
+        if rawOverride.enabled ~= nil then
+          merged.enabled = rawOverride.enabled == true
+          if rawOverride.enabled == false then
+            merged.mods = {}
+            merged.key = false
+          end
+        end
+      else
+        changed = true
+      end
+
+      local override = self:_buildOverride(merged)
+      if override then
+        sanitized[id] = override
+      end
+      if not Normalize.deepEqual(rawOverride, override) then
+        changed = true
+      end
+    end
+  end
+
+  return sanitized, changed
+end
+
 function HotkeyManager:_loadOverrides()
-  return self.settings.getHotkeyOverrides()
+  local overrides = self.settings.getHotkeyOverrides()
+  local sanitized, changed = self:_sanitizeOverrides(overrides)
+  if changed then
+    self.settings.setHotkeyOverrides(sanitized)
+  end
+  return sanitized
 end
 
 function HotkeyManager:_saveOverrides(overrides)
-  self.settings.setHotkeyOverrides(overrides)
+  local sanitized = self:_sanitizeOverrides(overrides)
+  self.settings.setHotkeyOverrides(sanitized)
 end
 
 function HotkeyManager:invalidateUiCache()
@@ -403,7 +487,7 @@ function HotkeyManager:_startSystemBindingsIfNeeded()
         return false
       end
 
-      local combo = normalizeConflictCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local combo = normalizeConflictCombo(modsFromFlags(eventFlags(event)), normalizedKey)
       local binding = self.liveSystemBindingsByCombo[combo]
       if not binding then
         return false
@@ -431,7 +515,7 @@ function HotkeyManager:_startSystemBindingsIfNeeded()
         return false
       end
 
-      local combo = normalizeConflictCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local combo = normalizeConflictCombo(modsFromFlags(eventFlags(event)), normalizedKey)
       local binding = self.liveRawSystemBindingsByCombo[combo]
       if not binding then
         return false
@@ -607,11 +691,11 @@ end
 function HotkeyManager:_buildOverride(binding)
   local defaultBinding = self.defaultsById[binding.id]
   local override = {}
-  if binding.key == false then
-    override.mods = {}
-    override.key = false
-  elseif normalizeConflictCombo(binding.mods, binding.key) ~= normalizeConflictCombo(defaultBinding.mods, defaultBinding.key) then
-    override.mods = cloneArray(binding.mods)
+  local defaultCombo = normalizeConflictCombo(defaultBinding.mods, defaultBinding.key)
+  local bindingCombo = normalizeConflictCombo(binding.mods, binding.key)
+
+  if bindingCombo ~= defaultCombo then
+    override.mods = binding.key == false and {} or cloneArray(binding.mods)
     override.key = binding.key
   end
   if binding.enabled ~= defaultBinding.enabled then
@@ -770,6 +854,17 @@ function HotkeyManager:updateBinding(id, payload)
 end
 
 function HotkeyManager:resetBinding(id)
+  if not self.defaultsById[id] then
+    return {
+      ok = false,
+      code = "missing_binding",
+      ids = {
+        [tostring(id or "")] = {},
+      },
+      message = "Unknown hotkey binding.",
+    }
+  end
+
   local overrides = self:_loadOverrides()
   overrides[id] = nil
   self:_saveOverrides(overrides)
