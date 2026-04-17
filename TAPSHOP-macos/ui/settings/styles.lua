@@ -196,6 +196,11 @@ function Styles.buildCss(theme)
   box-shadow: 0 0 0 calc(1px * var(--ui-scale)) rgba(125, 211, 162, 0.34);
 }
 
+.remap-capture.is-busy {
+  opacity: 0.72;
+  cursor: wait;
+}
+
 .remap-capture.is-cleared {
   border-color: rgba(240, 201, 123, 0.58);
   box-shadow: 0 0 0 calc(1px * var(--ui-scale)) rgba(240, 201, 123, 0.26);
@@ -249,7 +254,13 @@ function Styles.buildCss(theme)
 }
 
 .remap-preview-combo.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
+  min-height: calc(24px * var(--ui-scale));
+  padding: var(--remap-preview-pad);
+  box-sizing: border-box;
   border: 1px dashed rgba(255, 255, 255, 0.12);
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.01);
@@ -262,6 +273,7 @@ function Styles.buildCss(theme)
   gap: var(--remap-preview-gap);
   flex-wrap: wrap;
   width: 100%;
+  min-height: calc(19px * var(--ui-scale));
 }
 
 .remap-preview-title {
@@ -285,6 +297,14 @@ function Styles.buildCss(theme)
 }
 
 .remap-save-btn[disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.hotkey-btn[disabled],
+.header-btn[disabled],
+.settings-tab[disabled],
+.remap-mod-btn[disabled] {
   opacity: 0.45;
   pointer-events: none;
 }

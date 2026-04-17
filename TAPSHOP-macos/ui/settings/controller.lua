@@ -143,16 +143,41 @@ function SettingsWindow.new(app, cfg, deps)
     }
   end
 
+  local function currentHotkeysHtml()
+    if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
+      return app.hotkeyManager:getHotkeyHtmlCached(settingsRender.buildHotkeyListHtml)
+    end
+    local hotkeyState = app:getHotkeyUiState()
+    return settingsRender.buildHotkeyListHtml(hotkeyState.rows or {})
+  end
+
+  local function buildHotkeyUiPayload()
+    local hotkeyState = app:getHotkeyUiState()
+    local htmlStr = currentHotkeysHtml()
+    if htmlStr then
+      return {
+        htmlStr = htmlStr,
+        scrollTop = state.scrollTop or 0,
+        validation = state.validation,
+      }
+    end
+    return {
+      rows = hotkeyState.rows or {},
+      scrollTop = state.scrollTop or 0,
+      validation = state.validation,
+    }
+  end
+
   local function buildSettingsWindowStatePayload()
-    -- Hotkey rows are intentionally omitted: they are always pre-baked into
-    -- the page HTML and kept current by pushHotkeyState after any binding
-    -- change, so re-sending them on every show is wasteful.
+    local hotkeyPayload = buildHotkeyUiPayload()
     return {
       settingsTab = state.tab,
       search = state.search,
       scrollTop = state.scrollTop or 0,
       validation = state.validation,
       config = buildSettingsUiConfig(),
+      hotkeys = hotkeyPayload.rows,
+      hotkeysHtml = hotkeyPayload.htmlStr,
     }
   end
 
@@ -202,6 +227,38 @@ function SettingsWindow.new(app, cfg, deps)
       mods[#mods + 1] = "shift"
     end
     return mods
+  end
+
+  local function effectiveEventFlags(event)
+    local merged = {}
+
+    if event and event.getFlags then
+      local ok, flags = pcall(event.getFlags, event)
+      if ok and type(flags) == "table" then
+        for key, value in pairs(flags) do
+          if value then
+            merged[key] = true
+          end
+        end
+      end
+    end
+
+    if event
+      and event.getType
+      and event:getType() == hs.eventtap.event.types.systemDefined
+      and hs.eventtap
+      and type(hs.eventtap.checkKeyboardModifiers) == "function" then
+      local ok, liveFlags = pcall(hs.eventtap.checkKeyboardModifiers)
+      if ok and type(liveFlags) == "table" then
+        for key, value in pairs(liveFlags) do
+          if value then
+            merged[key] = true
+          end
+        end
+      end
+    end
+
+    return merged
   end
 
   local function normalizeRecordedKey(event)
@@ -265,7 +322,7 @@ function SettingsWindow.new(app, cfg, deps)
         return false
       end
 
-      local mods = normalizeRecordedMods(event:getFlags() or {})
+      local mods = normalizeRecordedMods(effectiveEventFlags(event))
       local key = normalizeRecordedKey(event)
       if not key then
         return true
@@ -294,48 +351,50 @@ function SettingsWindow.new(app, cfg, deps)
     panelRef:evaluateJavaScript("window.tapshopApplyValidation(" .. payload .. ")")
   end
 
+  local function notifyHotkeyCommit(panelRef, payload)
+    if not panelRef or not panelRef:isShown() then
+      return
+    end
+    local merged = buildHotkeyUiPayload()
+    if type(payload) == "table" then
+      for key, value in pairs(payload) do
+        merged[key] = value
+      end
+    end
+    local encoded = hs.json.encode(merged) or "{}"
+    panelRef:evaluateJavaScript(
+      "window.tapshopDidCommitHotkeyAction && window.tapshopDidCommitHotkeyAction(" .. encoded .. ")"
+    )
+  end
+
   pushHotkeyState = function(panelRef)
     if not panelRef:isShown() then
       return
     end
 
-    -- Prefer injecting pre-built HTML: encoding one string is much cheaper
-    -- than encoding N row objects, and JS just sets innerHTML directly.
-    local htmlStr = app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached
-      and app.hotkeyManager:getHotkeyHtmlCached(settingsRender.buildHotkeyListHtml)
-      or nil
-
-    if htmlStr then
+    local hotkeyPayload = buildHotkeyUiPayload()
+    if hotkeyPayload.htmlStr then
       local scrollTop = tostring(state.scrollTop or 0)
       local validationJson = state.validation and (hs.json.encode(state.validation) or "null") or "null"
-      local htmlJson = hs.json.encode(htmlStr) or '""'
+      local htmlJson = hs.json.encode(hotkeyPayload.htmlStr) or '""'
       panelRef:evaluateJavaScript(
         "window.tapshopApplyHotkeyHtml(" .. htmlJson .. "," .. scrollTop .. "," .. validationJson .. ")"
       )
       return
     end
 
-    local hotkeyState = app:getHotkeyUiState()
-    local payload = hs.json.encode({
-      rows = hotkeyState.rows or {},
+    local encoded = hs.json.encode({
+      rows = hotkeyPayload.rows or {},
       validation = state.validation,
       scrollTop = state.scrollTop or 0,
     }) or "{}"
-    panelRef:evaluateJavaScript("window.tapshopApplyHotkeyState(" .. payload .. ")")
+    panelRef:evaluateJavaScript("window.tapshopApplyHotkeyState(" .. encoded .. ")")
   end
 
   local function buildRenderContext()
     local theme = popoverStyles.buildTheme(cfg)
     local css = cachedThemeCss or settingsStyles.buildCss(theme)
-    -- Always pre-bake hotkeys HTML regardless of active tab so that tab
-    -- switching is instant (pure CSS visibility toggle, no round-trip).
     local hotkeyState = app:getHotkeyUiState()
-    local hotkeysHtml
-    if app.hotkeyManager and app.hotkeyManager.getHotkeyHtmlCached then
-      hotkeysHtml = app.hotkeyManager:getHotkeyHtmlCached(settingsRender.buildHotkeyListHtml)
-    else
-      hotkeysHtml = settingsRender.buildHotkeyListHtml(hotkeyState.rows or {})
-    end
 
     return {
       css = css,
@@ -347,7 +406,7 @@ function SettingsWindow.new(app, cfg, deps)
       scrollTop = state.scrollTop or 0,
       validation = state.validation,
       hotkeys = hotkeyState.rows or {},
-      hotkeysHtml = hotkeysHtml,
+      hotkeysHtml = currentHotkeysHtml(),
     }
   end
 
@@ -524,8 +583,8 @@ function SettingsWindow.new(app, cfg, deps)
         hideRemapPanel()
         state.validation = nil
         state.tab = normalizeSettingsTab(body.settingsTab)
-        -- No pushHotkeyState needed: hotkeys HTML is always pre-baked into
-        -- the page, so the tab switch is a pure CSS visibility change.
+        -- Hotkeys are refreshed through normal state pushes, so tab switches
+        -- only need layout recomputation here.
         requestBoundsRecompute(panelRef)
         return
       end
@@ -538,7 +597,10 @@ function SettingsWindow.new(app, cfg, deps)
         if result and result.ok then
           stopRemapRecorder()
           state.validation = nil
-          pushHotkeyState(panelRef)
+          notifyHotkeyCommit(panelRef, {
+            action = action,
+            id = body.id,
+          })
         else
           state.validation = result
           pushValidationState(panelRef, result)

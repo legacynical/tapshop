@@ -160,6 +160,8 @@ function Render.buildHotkeyListHtml(rows)
     parts[#parts + 1] = escapeHtml(table.concat(row.mods or {}, " "))
     parts[#parts + 1] = "\" data-assigned=\""
     parts[#parts + 1] = row.isAssigned and "1" or "0"
+    parts[#parts + 1] = "\" data-modified=\""
+    parts[#parts + 1] = row.isModified and "1" or "0"
     parts[#parts + 1] = "\" data-combo=\""
     parts[#parts + 1] = escapeHtml(comboSearch)
     parts[#parts + 1] = "\">\n"
@@ -306,6 +308,7 @@ local function remapModalHtml()
           </div>
           <div class="hotkeys-error is-hidden" data-remap-error></div>
           <div class="remap-actions">
+            <button type="button" class="btn hotkey-btn hotkey-reset-btn remap-reset-btn" data-remap-reset data-remap-action="reset">Reset</button>
             <button type="button" class="btn hotkey-btn remap-unbind-btn" data-remap-action="unbind">Unbind</button>
             <button type="button" class="btn hotkey-btn" data-remap-action="cancel">Cancel</button>
             <button type="button" class="btn hotkey-btn btn-primary remap-save-btn" data-remap-save data-remap-action="save">Save</button>

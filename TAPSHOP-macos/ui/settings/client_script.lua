@@ -183,6 +183,7 @@ function renderHotkeyRowHtml(row) {
     + ' data-key="' + escapeHtml(rawKey) + '"'
     + ' data-mods="' + escapeHtml((row.mods || []).join(" ")) + '"'
     + ' data-assigned="' + (row.isAssigned ? "1" : "0") + '"'
+    + ' data-modified="' + (row.isModified ? "1" : "0") + '"'
     + ' data-combo="' + escapeHtml(comboSearch) + '">'
     + '<div class="hotkey-main">'
     + '<span class="hotkey-label">' + escapeHtml(row.label) + '</span>'
@@ -216,6 +217,7 @@ function renderHotkeyList(rows) {
 }
 
 function showValidationUi(result) {
+  setHotkeyMutationPending(false);
   clearValidationUi();
   if (!result || !result.message) return;
 
@@ -248,6 +250,7 @@ window.tapshopApplyValidation = function (result) {
 
 window.tapshopApplyHotkeyState = function (state) {
   state = state || {};
+  setHotkeyMutationPending(false);
   cancelRemapModal(true);
   renderHotkeyList(state.rows || []);
   document.body.setAttribute("data-settings-scroll-top", String(state.scrollTop || 0));
@@ -258,6 +261,7 @@ window.tapshopApplyHotkeyState = function (state) {
 };
 
 window.tapshopApplyHotkeyHtml = function (htmlStr, scrollTop, validation) {
+  setHotkeyMutationPending(false);
   cancelRemapModal(true);
   var list = document.querySelector("[data-hotkeys-list]");
   if (list) list.innerHTML = htmlStr || "";
@@ -283,6 +287,7 @@ function applySettingsConfig(config) {
 
 window.tapshopApplySettingsWindowState = function (payload) {
   payload = payload || {};
+  setHotkeyMutationPending(false);
 
   applySettingsConfig(payload.config || null);
 
@@ -296,7 +301,10 @@ window.tapshopApplySettingsWindowState = function (payload) {
 
   document.body.setAttribute("data-settings-scroll-top", String(payload.scrollTop || 0));
 
-  if (Array.isArray(payload.hotkeys)) {
+  if (typeof payload.hotkeysHtml === "string") {
+    var list = document.querySelector("[data-hotkeys-list]");
+    if (list) list.innerHTML = payload.hotkeysHtml;
+  } else if (Array.isArray(payload.hotkeys)) {
     renderHotkeyList(payload.hotkeys);
   }
 
@@ -307,8 +315,23 @@ window.tapshopApplySettingsWindowState = function (payload) {
 };
 
 window.tapshopApplyRemapDraft = function (payload) {
+  if (hotkeyMutationPending) return;
   payload = payload || {};
-  applyDraftBinding(Array.isArray(payload.mods) ? payload.mods.slice() : [], payload.key || null);
+  var nextKey = Object.prototype.hasOwnProperty.call(payload, "key") ? payload.key : null;
+  applyDraftBinding(Array.isArray(payload.mods) ? payload.mods.slice() : [], nextKey);
+};
+
+window.tapshopDidCommitHotkeyAction = function (payload) {
+  payload = payload || {};
+  setHotkeyMutationPending(false);
+  cancelRemapModal(true);
+  if (typeof payload.htmlStr === "string") {
+    window.tapshopApplyHotkeyHtml(payload.htmlStr, payload.scrollTop || 0, payload.validation || null);
+    return;
+  }
+  if (Array.isArray(payload.rows)) {
+    window.tapshopApplyHotkeyState(payload);
+  }
 };
 
 window.tapshopCancelRemapRecorder = function () {
@@ -316,6 +339,7 @@ window.tapshopCancelRemapRecorder = function () {
 };
 
 function switchSettingsTab(tab) {
+  if (hotkeyMutationPending) return;
   cancelRemapModal();
   clearValidationUi();
   document.body.setAttribute("data-settings-scroll-top", "0");
@@ -328,13 +352,16 @@ function switchSettingsTab(tab) {
 function resetBinding(id) {
   cancelRemapModal();
   clearValidationUi();
+  if (!beginHotkeyMutation()) return;
   sendAction("resetHotkeyBinding", { id: id });
 }
 
 function resetAllHotkeys() {
+  if (hotkeyMutationPending) return;
   cancelRemapModal();
   if (!window.confirm("Restore all hotkeys to defaults?")) return;
   clearValidationUi();
+  if (!beginHotkeyMutation()) return;
   sendAction("resetAllHotkeys");
 }
 
@@ -440,6 +467,7 @@ var remapState = {
   targetLabel: "",
   currentMods: [],
   currentKey: null,
+  currentModified: false,
   draftMods: [],
   draftKey: null,
   cleared: false,
@@ -449,10 +477,54 @@ var remapState = {
   currentEl: null,
   draftEl: null,
   errorEl: null,
+  resetEl: null,
+  unbindEl: null,
   saveEl: null,
   statusEl: null,
   hintEl: null
 };
+
+var hotkeyMutationPending = false;
+
+function syncHotkeyMutationState() {
+  document.querySelectorAll("[data-hotkey-action], [data-settings-tab-button], .settings-restore-btn").forEach(function (button) {
+    if (button && typeof button.disabled === "boolean") {
+      button.disabled = hotkeyMutationPending;
+    }
+  });
+  document.querySelectorAll("[data-remap-mod]").forEach(function (button) {
+    if (button && typeof button.disabled === "boolean") {
+      button.disabled = hotkeyMutationPending;
+    }
+  });
+  if (remapState.resetEl) {
+    remapState.resetEl.disabled = hotkeyMutationPending || !remapState.currentModified;
+  }
+  if (remapState.unbindEl) {
+    remapState.unbindEl.disabled = hotkeyMutationPending;
+  }
+  document.querySelectorAll('[data-remap-action="cancel"]').forEach(function (button) {
+    if (button && typeof button.disabled === "boolean") {
+      button.disabled = hotkeyMutationPending;
+    }
+  });
+  if (remapState.captureEl) {
+    remapState.captureEl.classList.toggle("is-busy", hotkeyMutationPending);
+    remapState.captureEl.setAttribute("aria-busy", hotkeyMutationPending ? "true" : "false");
+    remapState.captureEl.tabIndex = hotkeyMutationPending ? -1 : 0;
+  }
+}
+
+function setHotkeyMutationPending(value) {
+  hotkeyMutationPending = value === true;
+  syncRemapActionState();
+}
+
+function beginHotkeyMutation() {
+  if (hotkeyMutationPending) return false;
+  setHotkeyMutationPending(true);
+  return true;
+}
 
 function arraysEqual(left, right) {
   var a = left || [];
@@ -499,9 +571,11 @@ function focusRemapCapture() {
 }
 
 function syncRemapActionState() {
-  if (!remapState.saveEl) return;
-  var canSave = (remapState.cleared || remapState.draftKey) && !remapMatchesCurrent();
-  remapState.saveEl.disabled = !canSave;
+  var canSave = !hotkeyMutationPending && (remapState.cleared || remapState.draftKey) && !remapMatchesCurrent();
+  if (remapState.saveEl) {
+    remapState.saveEl.disabled = !canSave;
+  }
+  syncHotkeyMutationState();
 }
 
 function renderRemapModifierState() {
@@ -516,7 +590,7 @@ function renderRemapModifierState() {
 function applyDraftBinding(mods, key) {
   remapState.cleared = false;
   remapState.draftMods = normalizeDraftMods(mods);
-  remapState.draftKey = key || null;
+  remapState.draftKey = key === false ? false : (key || null);
   if (remapState.errorEl) {
     remapState.errorEl.textContent = "";
     remapState.errorEl.classList.add("is-hidden");
@@ -542,11 +616,13 @@ function toggleRemapMod(mod) {
 function setComboPreview(el, mods, key, emptyText) {
   if (!el) return;
   if (key === false || key == null || key === "") {
-    el.innerHTML = '<span class="remap-preview-flow"><span class="hotkey-unset">' + escapeHtml(emptyText) + "</span></span>";
+    el.innerHTML = '<span class="remap-preview-flow" aria-hidden="true"></span>';
+    el.setAttribute("title", emptyText || "");
     el.classList.add("is-empty");
     return;
   }
   el.innerHTML = '<span class="remap-preview-flow">' + comboHtml(mods, key) + "</span>";
+  el.removeAttribute("title");
   el.classList.remove("is-empty");
 }
 
@@ -590,6 +666,7 @@ function renderRemapPreview() {
 }
 
 function openRemapModal(id) {
+  if (hotkeyMutationPending) return;
   var row = document.querySelector('[data-hotkey-row][data-id="' + id + '"]');
   if (!row || !remapState.shellEl) return;
 
@@ -599,6 +676,7 @@ function openRemapModal(id) {
   remapState.targetLabel = row.getAttribute("data-label") || "";
   remapState.currentKey = row.getAttribute("data-assigned") === "1" ? row.getAttribute("data-key") : false;
   remapState.currentMods = (row.getAttribute("data-mods") || "").split(" ").filter(Boolean);
+  remapState.currentModified = row.getAttribute("data-modified") === "1";
   remapState.draftMods = remapState.currentMods.slice();
   remapState.draftKey = remapState.currentKey || null;
   remapState.cleared = false;
@@ -613,10 +691,14 @@ function openRemapModal(id) {
 }
 
 function cancelRemapModal(skipNativeSync) {
-  if (!remapState.open) return;
+  var wasOpen = remapState.open === true;
   clearValidationUi();
   remapState.open = false;
   remapState.targetId = null;
+  remapState.targetLabel = "";
+  remapState.currentMods = [];
+  remapState.currentKey = null;
+  remapState.currentModified = false;
   remapState.draftMods = [];
   remapState.draftKey = null;
   remapState.cleared = false;
@@ -628,7 +710,8 @@ function cancelRemapModal(skipNativeSync) {
     remapState.captureEl.classList.remove("is-armed", "is-ready", "is-cleared", "has-error");
   }
   if (remapState.shellEl) remapState.shellEl.hidden = true;
-  if (!skipNativeSync) {
+  syncRemapActionState();
+  if (!skipNativeSync && wasOpen) {
     sendAction("cancelRemapRecorder");
   }
 }
@@ -648,10 +731,20 @@ function unbindRemapBinding() {
   focusRemapCapture();
 }
 
+function resetRemapBinding() {
+  if (!remapState.open || !remapState.targetId || !remapState.currentModified) return;
+  clearValidationUi();
+  if (!beginHotkeyMutation()) return;
+  sendAction("resetHotkeyBinding", {
+    id: remapState.targetId
+  });
+}
+
 function saveRemapModal() {
   if (!remapState.open || !remapState.targetId) return;
   clearValidationUi();
   if (remapState.cleared) {
+    if (!beginHotkeyMutation()) return;
     sendAction("updateHotkeyBinding", {
       id: remapState.targetId,
       mods: [],
@@ -660,6 +753,7 @@ function saveRemapModal() {
     return;
   }
   if (!remapState.draftKey) return;
+  if (!beginHotkeyMutation()) return;
   sendAction("updateHotkeyBinding", {
     id: remapState.targetId,
     mods: remapState.draftMods,
@@ -1016,12 +1110,17 @@ document.addEventListener("click", function (e) {
       cancelRemapModal();
       return;
     }
+    if (remapAction === "reset") {
+      resetRemapBinding();
+      return;
+    }
     if (remapAction === "unbind") {
       unbindRemapBinding();
       return;
     }
     if (remapAction === "save") {
       saveRemapModal();
+      return;
     }
   }
 
@@ -1163,9 +1262,12 @@ remapState.captureEl = document.querySelector("[data-remap-capture]");
 remapState.currentEl = document.querySelector("[data-remap-current]");
 remapState.draftEl = document.querySelector("[data-remap-draft]");
 remapState.errorEl = document.querySelector("[data-remap-error]");
+remapState.resetEl = document.querySelector("[data-remap-reset]");
+remapState.unbindEl = document.querySelector('[data-remap-action="unbind"]');
 remapState.saveEl = document.querySelector("[data-remap-save]");
 remapState.statusEl = document.querySelector("[data-remap-status]");
 remapState.hintEl = document.querySelector("[data-remap-hint]");
+syncRemapActionState();
 ]=]
 
 return ClientScript
