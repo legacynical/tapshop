@@ -17,8 +17,9 @@ end
 
 ensureModulePath()
 
-local Config = require("config")
-local settingsStore = require("settings_store")
+local Normalize = require("persistence.normalize")
+local Settings = require("persistence.settings_store")
+local AppData = require("persistence.appdata_store")
 local AppState = require("state.app_state")
 local HotkeyManager = require("hotkeys.manager")
 local windowService = require("services.window_service")
@@ -26,19 +27,78 @@ local YoutubeService = require("services.youtube_service")
 local SpotifyService = require("services.spotify_service")
 local SystemAudioService = require("services.system_audio_service")
 local Toast = require("ui.toast")
-local ToastMessage = require("ui.toast_message")
-local Assets = require("ui.assets")
-local Popover = require("ui.popover")
-local SettingsWindow = require("ui.settings_window")
+local Icons = require("ui.icons")
+local Popover = require("ui.popover.controller")
+local SettingsWindow = require("ui.settings.controller")
 
-local cfg = Config.load()
+local DEFAULT_CONFIG = {
+  inputDelay = 0.05,
+  minimizeThreshold = 2,
+  focusWaitTimeout = 0.22,
+  focusPollMicros = 10000,
+  youtubeDirectDispatch = true,
+  popoverAutoHideAfterAction = false,
+  popoverAlwaysOnTop = true,
+  popoverHidePairButtons = false,
+  recoverClosedWindows = true,
+  popoverBackgroundOpacity = 0.85,
+  tapshopMsgBottomMargin = 100,
+  tapshopMsgWidth = 760,
+  tapshopMsgTextSize = 14,
+  tapshopMsgMaxLines = 25,
+  browserBundleIDs = {
+    ["com.apple.Safari"] = true,
+    ["com.google.Chrome"] = true,
+    ["org.chromium.Chromium"] = true,
+    ["com.brave.Browser"] = true,
+    ["com.operasoftware.Opera"] = true,
+    ["com.operasoftware.OperaGX"] = true,
+    ["com.vivaldi.Vivaldi"] = true,
+    ["org.mozilla.firefox"] = true,
+    ["com.microsoft.edgemac"] = true,
+    ["ru.yandex.desktop.yandex-browser"] = true,
+    ["org.waterfoxproject.waterfox"] = true,
+    ["org.torproject.torbrowser"] = true,
+    ["com.maxthon.browser"] = true,
+    ["com.maxthon.Maxthon"] = true,
+    ["org.mozilla.seamonkey"] = true,
+    ["com.hiddenreflex.epic"] = true,
+    ["com.hiddenreflex.epicbrowser"] = true,
+    ["com.flashpeak.Slimjet"] = true,
+    ["com.comodo.dragon"] = true,
+    ["com.avast.browser"] = true,
+    ["com.srware.iron"] = true,
+    ["org.kde.falkon"] = true,
+    ["company.thebrowser.Browser"] = true,
+    ["company.thebrowser.dia"] = true,
+    ["ai.perplexity.comet"] = true,
+    ["io.gitlab.librewolf-community.librewolf"] = true,
+    ["one.ablaze.floorp"] = true,
+  },
+}
+
+local function loadConfig()
+  local cfg = Normalize.deepCopy(DEFAULT_CONFIG)
+  cfg.popoverAutoHideAfterAction = Settings.getPopoverAutoHideAfterAction()
+  cfg.popoverAlwaysOnTop = Settings.getPopoverAlwaysOnTop()
+  cfg.popoverHidePairButtons = Settings.getPopoverHidePairButtons()
+  cfg.recoverClosedWindows = Settings.getRecoverClosedWindows()
+  cfg.popoverBackgroundOpacity = Settings.getPopoverBackgroundOpacity()
+  return cfg
+end
+
+Settings.bootstrap()
+AppData.bootstrap()
+
+local cfg = loadConfig()
 local toast = Toast.new(cfg)
 local youtubeService = YoutubeService.new(cfg, windowService, toast)
 local spotifyService = SpotifyService.new()
 local systemAudioService = SystemAudioService.new()
 
 local app = AppState.new(cfg, {
-  settingsStore = settingsStore,
+  settings = Settings,
+  appdata = AppData,
   windowService = windowService,
   youtubeService = youtubeService,
   spotifyService = spotifyService,
@@ -46,15 +106,15 @@ local app = AppState.new(cfg, {
   toast = toast,
 })
 
-local hotkeyManager = HotkeyManager.new(app, settingsStore, Config.keys.hotkeyOverrides)
+local hotkeyManager = HotkeyManager.new(app, Settings)
 app:attachHotkeyManager(hotkeyManager)
 
 local popover = Popover.new(app, cfg, {
-  settingsStore = settingsStore,
+  appdata = AppData,
   windowService = windowService,
 })
 local settingsWindow = SettingsWindow.new(app, cfg, {
-  settingsStore = settingsStore,
+  appdata = AppData,
 })
 
 app:attachUi(popover, settingsWindow)
@@ -81,8 +141,8 @@ app.windowFilter = windowFilter
 
 hotkeyManager:bindAll()
 
-toast(ToastMessage.status("TAPSHOP ready (Hammerspoon)", {
-  imagePath = Assets.tapshopIconPath(),
+toast(Toast.message.status("TAPSHOP ready (Hammerspoon)", {
+  imagePath = Icons.tapshopIconPath(),
 }))
 
 hs.timer.doAfter(0.10, function()

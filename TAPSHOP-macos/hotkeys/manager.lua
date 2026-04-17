@@ -1,6 +1,5 @@
-local Conflicts = require("hotkeys.conflicts")
 local Registry = require("hotkeys.registry")
-local Utils = require("utils")
+local Normalize = require("persistence.normalize")
 
 local HotkeyManager = {}
 HotkeyManager.__index = HotkeyManager
@@ -28,6 +27,12 @@ local ASSIGNABLE_MODS = {
   ctrl = true,
   shift = true,
 }
+local MOD_ORDER = {
+  cmd = 1,
+  alt = 2,
+  ctrl = 3,
+  shift = 4,
+}
 
 local function cloneArray(values)
   local out = {}
@@ -51,15 +56,74 @@ local function cloneBinding(binding)
   }
 end
 
+local function normalizeConflictKey(key)
+  return Normalize.normalizeKey(key) or ""
+end
+
+local function normalizeConflictMods(mods)
+  local normalized = {}
+  for _, mod in ipairs(mods or {}) do
+    local value = tostring(mod)
+    if MOD_ORDER[value] then
+      normalized[#normalized + 1] = value
+    end
+  end
+  table.sort(normalized, function(a, b)
+    return MOD_ORDER[a] < MOD_ORDER[b]
+  end)
+
+  local deduped = {}
+  local last = nil
+  for _, mod in ipairs(normalized) do
+    if mod ~= last then
+      deduped[#deduped + 1] = mod
+    end
+    last = mod
+  end
+  return deduped
+end
+
+local function normalizeConflictCombo(mods, key)
+  local parts = normalizeConflictMods(mods)
+  parts[#parts + 1] = normalizeConflictKey(key)
+  return table.concat(parts, "+")
+end
+
+local function detectConflicts(bindingsById)
+  local comboMap = {}
+  for id, binding in pairs(bindingsById or {}) do
+    if binding.enabled and binding.key ~= false and binding.key ~= nil and binding.key ~= "" then
+      local combo = normalizeConflictCombo(binding.mods, binding.key)
+      comboMap[combo] = comboMap[combo] or {}
+      comboMap[combo][#comboMap[combo] + 1] = id
+    end
+  end
+
+  local conflictsById = {}
+  for _, ids in pairs(comboMap) do
+    if #ids > 1 then
+      for _, id in ipairs(ids) do
+        conflictsById[id] = {}
+        for _, otherId in ipairs(ids) do
+          if otherId ~= id then
+            conflictsById[id][#conflictsById[id] + 1] = otherId
+          end
+        end
+      end
+    end
+  end
+  return conflictsById
+end
+
 local function bindingUsesDefaultPopoverShortcut(binding)
   if not binding then
     return false
   end
-  return Conflicts.normalizeCombo(binding.mods, binding.key) == Conflicts.normalizeCombo(FALLBACK_MODS, FALLBACK_KEY)
+  return normalizeConflictCombo(binding.mods, binding.key) == normalizeConflictCombo(FALLBACK_MODS, FALLBACK_KEY)
 end
 
 local function isSystemKey(key)
-  return Utils.isSystemKey(key)
+  return Normalize.isSystemKey(key)
 end
 
 local function toBindableKey(key)
@@ -67,7 +131,7 @@ local function toBindableKey(key)
     return nil
   end
   if isSystemKey(key) then
-    return tostring(Utils.normalizeKey(key) or "")
+    return tostring(Normalize.normalizeKey(key) or "")
   end
   return string.lower(tostring(key or ""))
 end
@@ -109,7 +173,7 @@ local function modsFromFlags(flags)
   if flags and flags.shift then
     mods[#mods + 1] = "shift"
   end
-  return Conflicts.normalizeMods(mods)
+  return normalizeConflictMods(mods)
 end
 
 local function comboIsAssignable(mods, key)
@@ -200,7 +264,7 @@ local function isBindingAssigned(binding)
     and binding.key ~= ""
 end
 
-function HotkeyManager.new(app, settingsStore, settingsKey)
+function HotkeyManager.new(app, settings)
   local defaults = Registry.bindings()
 
   local defaultsById = {}
@@ -210,8 +274,7 @@ function HotkeyManager.new(app, settingsStore, settingsKey)
 
   local self = setmetatable({
     app = app,
-    settingsStore = settingsStore,
-    settingsKey = settingsKey,
+    settings = settings,
     defaults = defaults,
     defaultsById = defaultsById,
     liveHotkeys = {},
@@ -234,11 +297,11 @@ function HotkeyManager.new(app, settingsStore, settingsKey)
 end
 
 function HotkeyManager:_loadOverrides()
-  return self.settingsStore.getHotkeyOverrides(self.settingsKey)
+  return self.settings.getHotkeyOverrides()
 end
 
 function HotkeyManager:_saveOverrides(overrides)
-  self.settingsStore.setHotkeyOverrides(self.settingsKey, overrides)
+  self.settings.setHotkeyOverrides(overrides)
 end
 
 function HotkeyManager:invalidateUiCache()
@@ -257,7 +320,7 @@ function HotkeyManager:resolve()
     local override = overrides[defaultBinding.id]
     if override then
       if override.mods ~= nil then
-        merged.mods = Conflicts.normalizeMods(override.mods)
+        merged.mods = normalizeConflictMods(override.mods)
       end
       if override.key ~= nil then
         merged.key = override.key
@@ -273,13 +336,13 @@ function HotkeyManager:resolve()
     resolvedById[merged.id] = merged
   end
   self.resolvedById = resolvedById
-  self.conflictsById = Conflicts.detect(resolvedById)
+  self.conflictsById = detectConflicts(resolvedById)
 
   local popoverBinding = resolvedById[FALLBACK_BINDING_ID]
   if popoverBinding and not bindingUsesDefaultPopoverShortcut(popoverBinding) then
-    local reservedCombo = Conflicts.normalizeCombo(FALLBACK_MODS, FALLBACK_KEY)
+    local reservedCombo = normalizeConflictCombo(FALLBACK_MODS, FALLBACK_KEY)
     for id, binding in pairs(resolvedById) do
-      if id ~= FALLBACK_BINDING_ID and isBindingAssigned(binding) and Conflicts.normalizeCombo(binding.mods, binding.key) == reservedCombo then
+      if id ~= FALLBACK_BINDING_ID and isBindingAssigned(binding) and normalizeConflictCombo(binding.mods, binding.key) == reservedCombo then
         self.conflictsById[id] = self.conflictsById[id] or {}
         self.conflictsById[id][#self.conflictsById[id] + 1] = FALLBACK_BINDING_ID
         self.conflictsById[FALLBACK_BINDING_ID] = self.conflictsById[FALLBACK_BINDING_ID] or {}
@@ -332,15 +395,15 @@ function HotkeyManager:_startSystemBindingsIfNeeded()
       end
 
       local info = event:systemKey() or {}
-      if not Utils.isSystemKeyPress(info) then
+      if not Normalize.isSystemKeyPress(info) then
         return false
       end
-      local normalizedKey = Utils.normalizeSystemKeyInfo(info)
+      local normalizedKey = Normalize.normalizeSystemKeyInfo(info)
       if not normalizedKey then
         return false
       end
 
-      local combo = Conflicts.normalizeCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local combo = normalizeConflictCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
       local binding = self.liveSystemBindingsByCombo[combo]
       if not binding then
         return false
@@ -363,12 +426,12 @@ function HotkeyManager:_startSystemBindingsIfNeeded()
         return false
       end
 
-      local normalizedKey = Utils.normalizeRawKeyCode(keyCode)
+      local normalizedKey = Normalize.normalizeRawKeyCode(keyCode)
       if not normalizedKey then
         return false
       end
 
-      local combo = Conflicts.normalizeCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
+      local combo = normalizeConflictCombo(modsFromFlags(event:getFlags() or {}), normalizedKey)
       local binding = self.liveRawSystemBindingsByCombo[combo]
       if not binding then
         return false
@@ -424,7 +487,7 @@ function HotkeyManager:bindAll()
     local resolved = self.resolvedById[binding.id]
     if resolved and isBindingAssigned(resolved) and not self.conflictsById[resolved.id] then
       if isSystemKey(resolved.key) then
-        local combo = Conflicts.normalizeCombo(resolved.mods, resolved.key)
+        local combo = normalizeConflictCombo(resolved.mods, resolved.key)
         if tostring(resolved.key):match("^SYSTEM_%d+$") then
           self.liveRawSystemBindingsByCombo[combo] = resolved
         else
@@ -465,7 +528,7 @@ function HotkeyManager:_warningFor(binding)
   if not isBindingAssigned(binding) then
     return nil
   end
-  local combo = Conflicts.normalizeCombo(binding.mods, binding.key)
+  local combo = normalizeConflictCombo(binding.mods, binding.key)
   if SYSTEM_SHORTCUTS[combo] then
     return "Likely reserved by macOS: " .. SYSTEM_SHORTCUTS[combo]
   end
@@ -547,7 +610,7 @@ function HotkeyManager:_buildOverride(binding)
   if binding.key == false then
     override.mods = {}
     override.key = false
-  elseif Conflicts.normalizeCombo(binding.mods, binding.key) ~= Conflicts.normalizeCombo(defaultBinding.mods, defaultBinding.key) then
+  elseif normalizeConflictCombo(binding.mods, binding.key) ~= normalizeConflictCombo(defaultBinding.mods, defaultBinding.key) then
     override.mods = cloneArray(binding.mods)
     override.key = binding.key
   end
@@ -573,9 +636,9 @@ function HotkeyManager:_applyCandidate(candidateById)
   end
 
   if not bindingUsesDefaultPopoverShortcut(popoverBinding) then
-    local reservedCombo = Conflicts.normalizeCombo(FALLBACK_MODS, FALLBACK_KEY)
+    local reservedCombo = normalizeConflictCombo(FALLBACK_MODS, FALLBACK_KEY)
     for id, binding in pairs(candidateById) do
-      if id ~= FALLBACK_BINDING_ID and isBindingAssigned(binding) and Conflicts.normalizeCombo(binding.mods, binding.key) == reservedCombo then
+      if id ~= FALLBACK_BINDING_ID and isBindingAssigned(binding) and normalizeConflictCombo(binding.mods, binding.key) == reservedCombo then
         return false, {
           code = "popover_fallback_reserved",
           ids = {
@@ -612,10 +675,10 @@ function HotkeyManager:updateBinding(id, payload)
 
   local candidate = candidateById[id]
   if payload.mods ~= nil then
-    candidate.mods = Conflicts.normalizeMods(payload.mods)
+    candidate.mods = normalizeConflictMods(payload.mods)
   end
   if payload.key ~= nil then
-    local normalizedKey = Utils.normalizeKey(payload.key)
+    local normalizedKey = Normalize.normalizeKey(payload.key)
     if normalizedKey == nil then
       return {
         ok = false,
@@ -718,12 +781,18 @@ function HotkeyManager:resetBinding(id)
 end
 
 function HotkeyManager:resetAll()
-  self.settingsStore.clearSetting(self.settingsKey)
+  self.settings.resetHotkeyOverrides()
   self:invalidateUiCache()
   self:bindAll()
   return {
     ok = true,
   }
 end
+
+HotkeyManager._conflicts = {
+  normalizeMods = normalizeConflictMods,
+  normalizeCombo = normalizeConflictCombo,
+  detect = detectConflicts,
+}
 
 return HotkeyManager

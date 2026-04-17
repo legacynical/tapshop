@@ -1,8 +1,7 @@
 local Workspace = require("state.workspace")
 local SlotRecord = require("state.slot_record")
 local SlotRow = require("state.slot_row")
-local configModule = require("config")
-local ToastMessage = require("ui.toast_message")
+local Toast = require("ui.toast")
 
 local AppState = {}
 AppState.__index = AppState
@@ -11,24 +10,15 @@ local UNPAIR_TOAST_COLOR = { red = 0xc0 / 255, green = 0x40 / 255, blue = 0x30 /
 local HOTKEY_WARNING_TOAST_COLOR = { red = 0xf2 / 255, green = 0xc1 / 255, blue = 0x4e / 255, alpha = 1 }
 local TOAST_WHITE = { white = 1, alpha = 1 }
 
-local function loadPersistedWorkspacePairings(settingsStore)
-  local key = configModule.keys.workspacePairings
-  local raw = hs.settings.get(key)
-  if raw == nil then
-    return {}
-  end
-  if type(raw) ~= "table" then
-    settingsStore.clearSetting(key)
-    return {}
-  end
-
-  return settingsStore.getWindowPairings(key)
+local function loadPersistedWorkspacePairings(appdata)
+  return appdata.getWindowPairings()
 end
 
 function AppState.new(cfg, deps)
   local self = setmetatable({
     cfg = cfg,
-    settingsStore = deps.settingsStore,
+    settings = deps.settings,
+    appdata = deps.appdata,
     windowService = deps.windowService,
     youtubeService = deps.youtubeService,
     spotifyService = deps.spotifyService,
@@ -306,14 +296,11 @@ function AppState:_workspacePairingSnapshot()
 end
 
 function AppState:_persistWorkspacePairings()
-  self.settingsStore.setWindowPairings(
-    configModule.keys.workspacePairings,
-    self:_workspacePairingSnapshot()
-  )
+  self.appdata.setWindowPairings(self:_workspacePairingSnapshot())
 end
 
 function AppState:_restoreWorkspacePairings()
-  local pairings = loadPersistedWorkspacePairings(self.settingsStore)
+  local pairings = loadPersistedWorkspacePairings(self.appdata)
   local restoredCount = 0
   for index, persisted in pairs(pairings) do
     local workspace = self:_getWorkspace(index)
@@ -577,7 +564,7 @@ end
 function AppState:_formatPairToast(workspace, win)
   local app = win and win:application() or nil
   local label = self.windowService.windowTitle and self.windowService.windowTitle(win) or self.windowService.displayTitle(win)
-  return ToastMessage.windowAction({
+  return Toast.message.windowAction({
     prefixText = string.format("Pairing %s: ", workspace:getName()),
     titleText = label,
     bundleID = app and app:bundleID() or nil,
@@ -595,7 +582,7 @@ function AppState:_formatUnpairToast(workspace, win)
   if label == "[empty]" then
     label = workspace:getStoredWindowTitle()
   end
-  return ToastMessage.windowAction({
+  return Toast.message.windowAction({
     prefixText = string.format("Unpairing %s: ", workspace:getName()),
     titleText = label,
     bundleID = app and app:bundleID() or fingerprint.bundleID or nil,
@@ -607,7 +594,7 @@ end
 
 function AppState:_formatClosedWindowUnpairToast(workspace)
   local fingerprint = workspace and workspace:getFingerprint() or {}
-  return ToastMessage.windowAction({
+  return Toast.message.windowAction({
     prefixText = "[Unpaired Closed Window: ",
     titleText = workspace and workspace:getStoredWindowTitle() or "[empty]",
     bundleID = fingerprint.bundleID or nil,
@@ -626,7 +613,7 @@ function AppState:_formatRestoreToast(workspaces, win)
   for _, ws in ipairs(workspaces) do
     names[#names + 1] = ws:getName()
   end
-  return ToastMessage.windowAction({
+  return Toast.message.windowAction({
     prefixText = "Restored " .. table.concat(names, ", ") .. ": ",
     titleText = label,
     bundleID = app and app:bundleID() or nil,
@@ -664,7 +651,7 @@ function AppState:pairSlot(index, sourceWindow)
 
   local win = sourceWindow
   if not win then
-    self.toast(ToastMessage.plain("No window to pair!"))
+    self.toast(Toast.message.plain("No window to pair!"))
     return false
   end
 
@@ -684,7 +671,7 @@ function AppState:activateSlot(index)
   self:_runWorkspaceAction(function()
     local win = hs.window.frontmostWindow()
     if not win then
-      self.toast(ToastMessage.plain("No active window found!"))
+      self.toast(Toast.message.plain("No active window found!"))
       return
     end
 
@@ -756,7 +743,7 @@ function AppState:activateSlot(index)
         workspace:resetInputBuffer()
         self:_activateResolvedPairedWindow(workspace, paired, focusedSpaceId)
       elseif not self:_activateExactWindowIdAcrossSpaces(workspace, focusedSpaceId) then
-        self.toast(ToastMessage.plain("Window not found in any spaces"))
+        self.toast(Toast.message.plain("Window not found in any spaces"))
       end
       return
     end
@@ -793,7 +780,7 @@ function AppState:unpairSlot(index)
       workspace:clear()
       self.toast(toastPayload)
     else
-      self.toast(ToastMessage.plain(workspace:getName() .. " is already unpaired!"))
+      self.toast(Toast.message.plain(workspace:getName() .. " is already unpaired!"))
     end
   end)
 end
@@ -803,7 +790,7 @@ function AppState:unpairAll()
     for _, workspace in ipairs(self.workspaces) do
       workspace:clear()
     end
-    self.toast(ToastMessage.plain("[Unpaired All Windows]"))
+    self.toast(Toast.message.plain("[Unpaired All Windows]"))
   end)
 end
 
@@ -843,13 +830,13 @@ end
 
 function AppState:setPopoverAutoHide(enabled)
   self.cfg.popoverAutoHideAfterAction = enabled == true
-  self.settingsStore.setBoolean(configModule.keys.popoverAutoHideAfterAction, self.cfg.popoverAutoHideAfterAction)
+  self.settings.setPopoverAutoHideAfterAction(self.cfg.popoverAutoHideAfterAction)
   self:syncUi()
 end
 
 function AppState:setPopoverAlwaysOnTop(enabled)
   self.cfg.popoverAlwaysOnTop = enabled == true
-  self.settingsStore.setBoolean(configModule.keys.popoverAlwaysOnTop, self.cfg.popoverAlwaysOnTop)
+  self.settings.setPopoverAlwaysOnTop(self.cfg.popoverAlwaysOnTop)
   if self.popover and self.popover.syncWindowLevel then
     self.popover:syncWindowLevel()
   end
@@ -861,13 +848,13 @@ end
 
 function AppState:setPopoverHidePairButtons(enabled)
   self.cfg.popoverHidePairButtons = enabled == true
-  self.settingsStore.setBoolean(configModule.keys.popoverHidePairButtons, self.cfg.popoverHidePairButtons)
+  self.settings.setPopoverHidePairButtons(self.cfg.popoverHidePairButtons)
   self:syncUi()
 end
 
 function AppState:setRecoverClosedWindows(enabled)
   self.cfg.recoverClosedWindows = enabled == true
-  self.settingsStore.setBoolean(configModule.keys.recoverClosedWindows, self.cfg.recoverClosedWindows)
+  self.settings.setRecoverClosedWindows(self.cfg.recoverClosedWindows)
   if not self.cfg.recoverClosedWindows and self:_clearRecoverableWorkspaces() then
     self:_persistWorkspacePairings()
   end
@@ -876,10 +863,7 @@ end
 
 function AppState:setPopoverOpacity(opacity)
   local normalized = opacity > 1 and (opacity / 100) or opacity
-  self.cfg.popoverBackgroundOpacity = self.settingsStore.setOpacity(
-    configModule.keys.popoverBackgroundOpacity,
-    normalized
-  )
+  self.cfg.popoverBackgroundOpacity = self.settings.setPopoverBackgroundOpacity(normalized)
   self:syncUi()
 end
 
@@ -921,7 +905,7 @@ function AppState:updateHotkeyBinding(id, payload)
 
   local result = self.hotkeyManager:updateBinding(id, payload or {})
   if result and result.ok and type(self.toast) == "function" and type(result.conflictIds) == "table" and #result.conflictIds > 0 then
-    self.toast(ToastMessage.plain(
+    self.toast(Toast.message.plain(
       result.message or "Shortcut saved. Conflicting TAPSHOP hotkeys were disabled until resolved.",
       { color = HOTKEY_WARNING_TOAST_COLOR }
     ))
