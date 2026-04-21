@@ -137,6 +137,7 @@ function SettingsWindow.new(app, cfg, deps)
     return {
       autoHideAfterAction = cfg.popoverAutoHideAfterAction == true,
       alwaysOnTop = cfg.popoverAlwaysOnTop == true,
+      hideOnFullscreenWorkspace = cfg.popoverHideOnFullscreenWorkspace == true,
       hidePairButtons = cfg.popoverHidePairButtons == true,
       recoverClosedWindows = cfg.recoverClosedWindows == true,
       opacityPercent = (theme and theme.opacityPercent) or popoverStyles.buildTheme(cfg).opacityPercent,

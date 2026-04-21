@@ -235,6 +235,13 @@ local function generalTabHtml(config)
     .. "            </label>\n"
     .. "            <label class=\"settings-item\">\n"
     .. "              <input type=\"checkbox\" "
+    .. checkedAttr(config.hideOnFullscreenWorkspace)
+    .. " data-settings-config=\"hideOnFullscreenWorkspace\""
+    .. " onchange=\"sendAction('setHideOnFullscreenWorkspace', { slot: this.checked ? 1 : 0 })\">\n"
+    .. "              <span>Hide when entering fullscreen workspace</span>\n"
+    .. "            </label>\n"
+    .. "            <label class=\"settings-item\">\n"
+    .. "              <input type=\"checkbox\" "
     .. checkedAttr(config.hidePairButtons)
     .. " data-settings-config=\"hidePairButtons\""
     .. " onchange=\"sendAction('setHidePairButtons', { slot: this.checked ? 1 : 0 })\">\n"
