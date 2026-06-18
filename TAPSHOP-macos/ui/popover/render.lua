@@ -66,8 +66,6 @@ local function profileSwitcherHtml(ctx)
     "<button type=\"button\" class=\"profile-btn\" data-tooltip=\"Previous profile\" aria-label=\"Previous profile\" onclick=\"sendAction('activatePreviousProfile')\">&lsaquo;</button>",
     "<span class=\"profile-label\" data-tooltip=\"Active profile\">P",
     tostring(activeProfileId),
-    " / ",
-    tostring(profileCount),
     "</span>",
     "<button type=\"button\" class=\"profile-btn\" data-tooltip=\"Next profile\" aria-label=\"Next profile\" onclick=\"sendAction('activateNextProfile')\">&rsaquo;</button>",
     "</div>",
