@@ -692,7 +692,7 @@ function SettingsWindow.new(app, cfg, deps)
   end
 
   function instance:refreshCache()
-    local theme = popoverTheme.buildTheme(cfg)
+    local theme = popoverStyles.buildTheme(cfg)
     local nextThemeCss = settingsStyles.buildCss(theme)
     local settingsThemeChanged = cachedThemeCss ~= nextThemeCss
 
