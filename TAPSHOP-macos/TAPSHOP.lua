@@ -39,6 +39,7 @@ local DEFAULT_CONFIG = {
   youtubeDirectDispatch = true,
   popoverAutoHideAfterAction = false,
   popoverAlwaysOnTop = true,
+  popoverHideOnFullscreenWorkspace = true,
   popoverHidePairButtons = false,
   recoverClosedWindows = true,
   popoverBackgroundOpacity = 0.85,
@@ -81,6 +82,7 @@ local function loadConfig()
   local cfg = Normalize.deepCopy(DEFAULT_CONFIG)
   cfg.popoverAutoHideAfterAction = Settings.getPopoverAutoHideAfterAction()
   cfg.popoverAlwaysOnTop = Settings.getPopoverAlwaysOnTop()
+  cfg.popoverHideOnFullscreenWorkspace = Settings.getPopoverHideOnFullscreenWorkspace()
   cfg.popoverHidePairButtons = Settings.getPopoverHidePairButtons()
   cfg.recoverClosedWindows = Settings.getRecoverClosedWindows()
   cfg.popoverBackgroundOpacity = Settings.getPopoverBackgroundOpacity()

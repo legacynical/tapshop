@@ -15,6 +15,37 @@ function WebviewPanel.new(opts)
     return value
   end
 
+  local function applyBehavior(view)
+    local behavior = resolveValue(opts.behavior)
+    if behavior == nil then
+      return
+    end
+
+    if type(behavior) == "table" and type(view.behaviorAsLabels) == "function" then
+      view:behaviorAsLabels(behavior)
+      return
+    end
+
+    if type(view.behavior) == "function" then
+      if type(behavior) == "number" then
+        view:behavior(behavior)
+        return
+      end
+
+      if type(behavior) == "table" and hs.drawing and hs.drawing.windowBehaviors then
+        local mask = 0
+        for _, value in ipairs(behavior) do
+          local flag = type(value) == "number" and value or hs.drawing.windowBehaviors[value]
+          if type(flag) ~= "number" then
+            return
+          end
+          mask = mask | flag
+        end
+        view:behavior(mask)
+      end
+    end
+  end
+
   local function ensureWebview()
     if webview then
       return webview
@@ -41,6 +72,7 @@ function WebviewPanel.new(opts)
     if opts.level then
       webview:level(resolveValue(opts.level))
     end
+    applyBehavior(webview)
 
     webview:allowNewWindows(false)
     webview:allowNavigationGestures(false)
@@ -81,6 +113,12 @@ function WebviewPanel.new(opts)
     end
   end
 
+  function panel:syncBehavior()
+    if webview then
+      applyBehavior(webview)
+    end
+  end
+
   function panel:evaluateJavaScript(script)
     local view = ensureWebview()
     return view:evaluateJavaScript(script)
@@ -101,6 +139,7 @@ function WebviewPanel.new(opts)
     if opts.level then
       view:level(resolveValue(opts.level))
     end
+    applyBehavior(view)
     if isHtmlDirty or not cachedHtml then
       panel:refresh()
     end

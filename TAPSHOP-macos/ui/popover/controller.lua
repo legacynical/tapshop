@@ -94,6 +94,21 @@ function Popover.new(app, cfg, deps)
     return hs.drawing.windowLevels.normal
   end
 
+  local function currentPopoverBehavior()
+    local behavior = {
+      "canJoinAllSpaces",
+      "fullScreenAuxiliary",
+    }
+
+    if cfg.popoverAlwaysOnTop then
+      behavior[#behavior + 1] = "transient"
+    else
+      behavior[#behavior + 1] = "managed"
+    end
+
+    return behavior
+  end
+
   local function focusPanelWindow(panelRef)
     if cfg.popoverAlwaysOnTop then
       return
@@ -118,96 +133,6 @@ function Popover.new(app, cfg, deps)
         win:focus()
       end
     end
-  end
-
-  local function panelWindow(panelRef)
-    local view = panelRef and panelRef.getWebview and panelRef:getWebview() or nil
-    if not view or type(view.hswindow) ~= "function" then
-      return nil
-    end
-
-    local ok, win = pcall(view.hswindow, view)
-    if not ok then
-      return nil
-    end
-
-    return win
-  end
-
-  local function currentSpaceId()
-    if windowService and type(windowService.currentSpaceId) == "function" then
-      local ok, spaceId = pcall(windowService.currentSpaceId)
-      if ok and type(spaceId) == "number" then
-        return spaceId
-      end
-    end
-
-    local focusedSpaceFn = hs.spaces and hs.spaces.focusedSpace
-    if type(focusedSpaceFn) == "function" then
-      local ok, spaceId = pcall(focusedSpaceFn)
-      if ok and type(spaceId) == "number" then
-        return spaceId
-      end
-    end
-
-    local activeSpaceFn = hs.spaces and hs.spaces.activeSpaceOnScreen
-    if type(activeSpaceFn) == "function" then
-      local ok, spaceId = pcall(activeSpaceFn, hs.screen.mainScreen())
-      if ok and type(spaceId) == "number" then
-        return spaceId
-      end
-    end
-
-    return nil
-  end
-
-  local function windowSpaceIds(win)
-    if not win then
-      return nil
-    end
-
-    if windowService and type(windowService.getWindowSpaces) == "function" then
-      local ok, spaceIds = pcall(windowService.getWindowSpaces, win)
-      if ok and type(spaceIds) == "table" then
-        return spaceIds
-      end
-    end
-
-    local spacesFn = hs.spaces and hs.spaces.windowSpaces
-    if type(spacesFn) ~= "function" then
-      return nil
-    end
-
-    local ok, spaceIds = pcall(spacesFn, win)
-    if ok and type(spaceIds) == "table" then
-      return spaceIds
-    end
-
-    return nil
-  end
-
-  local function panelIsInCurrentSpace(panelRef)
-    if not panelRef:isShown() then
-      return false
-    end
-
-    local spaceId = currentSpaceId()
-    if type(spaceId) ~= "number" then
-      return nil
-    end
-
-    local spaceIds = windowSpaceIds(panelWindow(panelRef))
-    if type(spaceIds) ~= "table" then
-      return nil
-    end
-
-    for _, candidateSpaceId in ipairs(spaceIds) do
-      if candidateSpaceId == spaceId then
-        return true
-      end
-    end
-
-    return false
   end
 
   local function saveTopLeftFromFrame(panelRef)
@@ -328,6 +253,7 @@ function Popover.new(app, cfg, deps)
     windowStyle = hs.webview.windowMasks.borderless,
     transparent = true,
     level = currentPopoverLevel,
+    behavior = currentPopoverBehavior,
     allowTextEntry = true,
     buildHtml = function()
       return popoverRender.buildHtml(buildRenderContext())
@@ -537,16 +463,11 @@ function Popover.new(app, cfg, deps)
 
   function instance:toggleOrFocus()
     if cfg.popoverAlwaysOnTop then
-      if panel:isShown() and panelIsInCurrentSpace(panel) == true then
-        panel:hide()
-        return
-      end
-
       if panel:isShown() then
         panel:hide()
+      else
+        panel:show()
       end
-
-      panel:show()
       return
     end
 
@@ -570,6 +491,7 @@ function Popover.new(app, cfg, deps)
     panel:markDirty()
     cachedThemeCss = nil
     panel:setLevel(currentPopoverLevel())
+    panel:syncBehavior()
     if panel:isShown() then
       panel:refresh()
       requestBoundsRecompute(panel)
@@ -596,6 +518,7 @@ function Popover.new(app, cfg, deps)
 
   function instance:syncWindowLevel()
     panel:setLevel(currentPopoverLevel())
+    panel:syncBehavior()
   end
 
   return instance

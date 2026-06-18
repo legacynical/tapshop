@@ -174,6 +174,15 @@ function AppState:_runWorkspaceAction(actionFn)
   self:syncUi()
 end
 
+function AppState:_hidePopoverForFullscreenWorkspaceActivation()
+  if not self.cfg.popoverHideOnFullscreenWorkspace then
+    return
+  end
+  if self.popover and self.popover.hide then
+    self.popover:hide()
+  end
+end
+
 function AppState:_getWorkspace(index, profileId)
   local profile = self:_getProfile(profileId or self.session.activeProfileId)
   if not profile then
@@ -834,6 +843,7 @@ function AppState:activateSlot(index)
           if focusedSpaceId == resolvedFullscreenSpaceId then
             local fullscreenWin = self.windowService.getWindowById(workspace:getFullscreenTargetWindowId())
             if fullscreenWin then
+              self:_hidePopoverForFullscreenWorkspaceActivation()
               workspace:setFullscreenState({
                 fullscreenWindowId = fullscreenWin:id(),
                 fullscreenSpaceId = resolvedFullscreenSpaceId,
@@ -848,6 +858,7 @@ function AppState:activateSlot(index)
             if switchResult.ok then
               local fullscreenWin = self.windowService.getWindowById(workspace:getFullscreenTargetWindowId())
               if fullscreenWin then
+                self:_hidePopoverForFullscreenWorkspaceActivation()
                 workspace:setFullscreenState({
                   fullscreenWindowId = fullscreenWin:id(),
                   fullscreenSpaceId = resolvedFullscreenSpaceId,
@@ -1011,6 +1022,12 @@ end
 function AppState:setPopoverHidePairButtons(enabled)
   self.cfg.popoverHidePairButtons = enabled == true
   self.settings.setPopoverHidePairButtons(self.cfg.popoverHidePairButtons)
+  self:syncUi()
+end
+
+function AppState:setPopoverHideOnFullscreenWorkspace(enabled)
+  self.cfg.popoverHideOnFullscreenWorkspace = enabled == true
+  self.settings.setPopoverHideOnFullscreenWorkspace(self.cfg.popoverHideOnFullscreenWorkspace)
   self:syncUi()
 end
 
@@ -1283,6 +1300,10 @@ end
 
 POPOVER_ACTIONS["setHidePairButtons"] = function(self, body)
   self:setPopoverHidePairButtons(tonumber(body.slot) == 1)
+end
+
+POPOVER_ACTIONS["setHideOnFullscreenWorkspace"] = function(self, body)
+  self:setPopoverHideOnFullscreenWorkspace(tonumber(body.slot) == 1)
 end
 
 POPOVER_ACTIONS["setRecoverClosedWindows"] = function(self, body)

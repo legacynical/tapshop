@@ -10,6 +10,7 @@ local SETTINGS_DEFAULTS = {
   popover = {
     autoHideAfterAction = false,
     alwaysOnTop = true,
+    hideOnFullscreenWorkspace = true,
     hidePairButtons = false,
     backgroundOpacity = 0.85,
   },
@@ -42,6 +43,9 @@ local function normalizeSettings(raw)
     end
     if type(source.popover.alwaysOnTop) == "boolean" then
       normalized.popover.alwaysOnTop = source.popover.alwaysOnTop
+    end
+    if type(source.popover.hideOnFullscreenWorkspace) == "boolean" then
+      normalized.popover.hideOnFullscreenWorkspace = source.popover.hideOnFullscreenWorkspace
     end
     if type(source.popover.hidePairButtons) == "boolean" then
       normalized.popover.hidePairButtons = source.popover.hidePairButtons
@@ -184,6 +188,18 @@ end
 function SettingsStore.getPopoverHidePairButtons()
   ensureInitialized()
   return settingsData.popover.hidePairButtons == true
+end
+
+function SettingsStore.getPopoverHideOnFullscreenWorkspace()
+  ensureInitialized()
+  return settingsData.popover.hideOnFullscreenWorkspace == true
+end
+
+function SettingsStore.setPopoverHideOnFullscreenWorkspace(value)
+  ensureInitialized()
+  settingsData.popover.hideOnFullscreenWorkspace = value == true
+  persist()
+  return settingsData.popover.hideOnFullscreenWorkspace
 end
 
 function SettingsStore.setPopoverHidePairButtons(value)
