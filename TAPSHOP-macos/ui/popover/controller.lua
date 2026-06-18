@@ -5,6 +5,7 @@ local popoverStyles = require("ui.popover.styles")
 local webviewPanel = require("ui.webview_panel")
 
 local Popover = {}
+local REFRESH_DEBOUNCE_SECONDS = 0.18
 local AUTO_HIDE_ACTIONS = {
   pair = true,
   unpair = true,
@@ -191,10 +192,12 @@ function Popover.new(app, cfg, deps)
   local function buildRenderContext()
     local theme = popoverStyles.buildTheme(cfg)
     local primaryLine, headerBundleID, headerAppName = currentHeaderLines()
-    local css = cachedThemeCss or popoverStyles.buildCss(theme)
+    if not cachedThemeCss then
+      cachedThemeCss = popoverStyles.buildCss(theme)
+    end
 
     return {
-      css = css,
+      css = cachedThemeCss,
       script = clientScript.script,
       layoutPolicy = popoverLayout.clientPolicy(),
       theme = theme,
@@ -235,13 +238,9 @@ function Popover.new(app, cfg, deps)
   end
 
   local function queueRefresh()
-    if pendingRefresh then
-      return
-    end
-
     pendingRefresh = true
     stopRefreshTimer()
-    refreshTimer = hs.timer.doAfter(0, flushQueuedRefresh)
+    refreshTimer = hs.timer.doAfter(REFRESH_DEBOUNCE_SECONDS, flushQueuedRefresh)
   end
 
   panel = webviewPanel.new({

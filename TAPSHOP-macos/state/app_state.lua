@@ -153,13 +153,21 @@ function AppState:syncUi()
   end
 end
 
+function AppState:_syncWorkspaceUi()
+  if self.popover and self.popover.requestRefresh then
+    self.popover:requestRefresh("workspace_state")
+  elseif self.popover and self.popover.refreshIfShown then
+    self.popover:refreshIfShown()
+  end
+end
+
 function AppState:_runPairingAction(actionFn)
   if self.windowService and self.windowService.cancelPendingFrontmostRequest then
     self.windowService.cancelPendingFrontmostRequest()
   end
   actionFn()
   self:_persistWorkspacePairings()
-  self:syncUi()
+  self:_syncWorkspaceUi()
   if self.cfg.popoverAutoHideAfterAction and self.popover and self.popover.hide then
     self.popover:hide()
   end
@@ -171,7 +179,7 @@ function AppState:_runWorkspaceAction(actionFn)
     self.windowService.cancelPendingFrontmostRequest()
   end
   actionFn()
-  self:syncUi()
+  self:_syncWorkspaceUi()
 end
 
 function AppState:_hidePopoverForFullscreenWorkspaceActivation()
@@ -946,7 +954,7 @@ function AppState:activateProfile(profileId)
   if self.appdata.setActiveProfileId then
     self.appdata.setActiveProfileId(profile.id)
   end
-  self:syncUi()
+  self:_syncWorkspaceUi()
   self.toast(Toast.message.plain(string.format("[Active Profile: %d]", profile.id)))
   return true
 end
