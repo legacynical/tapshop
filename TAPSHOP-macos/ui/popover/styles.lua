@@ -117,7 +117,7 @@ end
 
 local function rootVars(theme)
   local c = theme.colors
-  local opacity = math.max(0.84, (theme.opacityPercent or 85) / 100)
+  local opacity = math.max(0.40, (theme.opacityPercent or 85) / 100)
 
   return [=[
 :root {
@@ -719,17 +719,96 @@ body[data-settings-tab="hotkeys"] .settings-panel[data-settings-panel="hotkeys"]
 }
 
 .settings-slider-block {
-  flex-direction: column;
-  align-items: stretch;
+  align-items: center;
+}
+
+.settings-slider-inline {
+  gap: calc(10px * var(--ui-scale));
+  padding-top: calc(6px * var(--ui-scale));
+  padding-bottom: calc(6px * var(--ui-scale));
 }
 
 .settings-slider-label {
+  flex: 0 0 auto;
   font-size: calc(11px * var(--ui-scale));
   color: var(--text-strong);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.settings-slider-control {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: calc(92px * var(--ui-scale));
+  display: flex;
+  align-items: center;
+  min-height: calc(18px * var(--ui-scale));
 }
 
 .settings-slider {
+  position: relative;
+  z-index: 2;
+  display: block;
   width: 100%;
+  height: calc(18px * var(--ui-scale));
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-slider::-webkit-slider-runnable-track {
+  height: calc(4px * var(--ui-scale));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.settings-slider::-webkit-slider-thumb {
+  width: calc(12px * var(--ui-scale));
+  height: calc(12px * var(--ui-scale));
+  margin-top: calc(-5px * var(--ui-scale));
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-slider::-moz-range-track {
+  height: calc(4px * var(--ui-scale));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: calc(12px * var(--ui-scale));
+  height: calc(12px * var(--ui-scale));
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.settings-slider-ticks {
+  position: absolute;
+  left: calc(6px * var(--ui-scale));
+  right: calc(6px * var(--ui-scale));
+  top: 50%;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.settings-slider-ticks span {
+  width: 1px;
+  height: calc(10px * var(--ui-scale));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .hotkeys-helper {
