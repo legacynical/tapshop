@@ -9,7 +9,7 @@
 ## What It Does
 
 1. Window pairing slots (`1`-`9`) so one hotkey can jump back to a specific app window.
-2. On macOS, profile banks (`F1`-`F12`) that swap which nine slots are active in the popover and hotkeys.
+2. On macOS, twelve remappable profile banks that swap which nine slots are active in the popover and hotkeys.
 3. Context-aware pair/focus/minimize flow:
    - First press pairs current window to slot.
    - Later press on same slot focuses paired window.
@@ -68,9 +68,44 @@ This repository ships source scripts. If you want a standalone `.exe`, compile `
 ### Setup
 
 1. Install [Hammerspoon](https://www.hammerspoon.org/)
-2. Copy or symlink `TAPSHOP-macos/TAPSHOP.lua` into your `~/.hammerspoon/` directory
-3. Add `require("TAPSHOP")` to your `~/.hammerspoon/init.lua`
-4. Reload Hammerspoon config (⌘ + ⇧ + R from menu bar, or `hs.reload()`)
+2. Clone TAPSHOP and choose the branch you want to run:
+
+   ```sh
+   mkdir -p ~/Documents/GitHub
+   cd ~/Documents/GitHub
+   git clone https://github.com/legacynical/tapshop.git
+   cd tapshop
+   git checkout main
+   ```
+
+   `main` contains the complete repo. macOS-only users can instead check out `macos` to avoid tracking Windows and legacy files.
+
+3. Add a loader to `~/.hammerspoon/init.lua` that points at your cloned repo:
+
+   ```lua
+   local tapshopRoot = os.getenv("HOME") .. "/Documents/GitHub/tapshop/TAPSHOP-macos"
+
+   tapshop = dofile(tapshopRoot .. "/TAPSHOP.lua")
+   ```
+
+   If you clone somewhere else, update `tapshopRoot` to that clone location. Keep the full `TAPSHOP-macos/` folder intact; `TAPSHOP.lua` loads sibling folders such as `hotkeys/`, `persistence/`, `services/`, `state/`, and `ui/`.
+
+4. Grant Hammerspoon Accessibility access in `System Settings -> Privacy & Security -> Accessibility`.
+5. Quit and reopen Hammerspoon after enabling Accessibility.
+6. Reload Hammerspoon config (`Cmd + Shift + R` from the menu bar, or run `hs.reload()`).
+
+### Branch Options
+
+The public repo's default branch is `main`, which contains all supported platform and legacy source trees. Platform-specific release branches can be used when you only want one slice of the repo:
+
+| Branch | Intended contents |
+|---|---|
+| `main` | Full repo: macOS, Windows, legacy variants, shared assets, and public docs |
+| `macos` | macOS Hammerspoon implementation and assets only |
+| `windows` | Windows AutoHotkey v2 implementation and assets only |
+| `legacy` | Historical `GYTP-*` variants only |
+
+Use the same setup flow and replace `git checkout main` with the branch you want, for example `git checkout macos`.
 
 TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
 
@@ -79,9 +114,9 @@ TAPSHOP stores its macOS files under `~/.hammerspoon/tapshop/`:
 
 ### Required Permissions (macOS)
 
-1. Grant Hammerspoon Accessibility access in `System Settings -> Privacy & Security -> Accessibility`.
-2. If prompted during Spotify actions, allow Apple Events/Automation permissions for Hammerspoon.
-
+1. Hammerspoon must have Accessibility access.
+2. Hammerspoon must be quit and reopened after Accessibility is enabled.
+3. If prompted during Spotify actions, allow Apple Events/Automation permissions for Hammerspoon.
 
 ### Hotkey Bindings (macOS)
 
@@ -113,7 +148,8 @@ Hotkeys can be remapped from the popover settings:
 
 If you remap the popover shortcut away from `Cmd + Option + \``, TAPSHOP keeps a hidden recovery path: press the default shortcut three times quickly to show the popover.
 
-<img width="499" height="408" alt="image" src="https://github.com/user-attachments/assets/b3109e53-944b-4f34-86e2-47e50035dbd0" />
+![TAPSHOP macOS popover mock showing paired, recoverable, fullscreen, and minimized slots](assets/readme-macos-popover.png)
+
 ---
 
 ## Behavior Notes
@@ -134,8 +170,12 @@ If you remap the popover shortcut away from `Cmd + Option + \``, TAPSHOP keeps a
   - Check if target app is elevated (run TAPSHOP as admin too).
 - macOS hotkeys not firing:
   - Confirm Hammerspoon Accessibility permission is enabled.
+  - If you just enabled Accessibility, quit and reopen Hammerspoon before reloading the config.
   - Some optional F-key bindings are only registered if that key exists in `hs.keycodes.map`.
   - If you remapped the popover toggle and forgot it, press `Cmd + Option + \`` three times quickly to reopen the popover.
+- macOS setup errors with `module ... not found`:
+  - Confirm `tapshopRoot` in `~/.hammerspoon/init.lua` points to the cloned repo's `TAPSHOP-macos` folder.
+  - Confirm the full `TAPSHOP-macos/` folder is still intact; do not copy only `TAPSHOP.lua`.
 - Spotify actions fail on macOS:
   - Open Spotify at least once and allow Automation prompts for Hammerspoon.
 
