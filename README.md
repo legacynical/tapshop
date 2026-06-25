@@ -148,7 +148,7 @@ Hotkeys can be remapped from the popover settings:
 
 If you remap the popover shortcut away from `Cmd + Option + \``, TAPSHOP keeps a hidden recovery path: press the default shortcut three times quickly to show the popover.
 
-![TAPSHOP macOS popover mock showing paired, recoverable, fullscreen, and minimized slots](assets/readme-macos-popover.png)
+<img width="530" alt="TAPSHOP macOS popover mock showing paired, recoverable, fullscreen, and minimized slots" src="assets/readme-macos-popover.png" />
 
 ---
 
