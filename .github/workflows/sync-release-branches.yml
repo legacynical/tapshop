@@ -1,0 +1,95 @@
+name: Sync release branches
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release-branches
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync release branch projections
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Rebuild platform release branches
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main macos windows legacy
+
+          sync_branch() {
+            local branch="$1"
+            shift
+            local worktree="../tapshop-${branch}-sync"
+
+            git worktree remove --force "$worktree" 2>/dev/null || true
+            git worktree add -B "$branch" "$worktree" "origin/$branch"
+
+            (
+              cd "$worktree"
+
+              git ls-files -z | xargs -0 -r git rm -f --ignore-unmatch --
+              git checkout "$SOURCE_SHA" -- "$@"
+
+              if git diff --cached --quiet && git diff --quiet; then
+                echo "${branch}: already in sync"
+                exit 0
+              fi
+
+              git status --short
+              git commit -m "chore: sync ${branch} release branch"
+              git push origin "HEAD:${branch}"
+            )
+
+            git worktree remove --force "$worktree"
+          }
+
+          sync_branch macos \
+            .github \
+            .gitignore \
+            LICENSE \
+            README.md \
+            assets \
+            icons \
+            TAPSHOP-macos
+
+          sync_branch windows \
+            .github \
+            .gitignore \
+            LICENSE \
+            README.md \
+            assets \
+            icons \
+            TAPSHOP-windows
+
+          sync_branch legacy \
+            .github \
+            .gitignore \
+            LICENSE \
+            README.md \
+            assets \
+            icons \
+            GYTP-AHKv1.1-deprecated \
+            GYTP-AHKv2-keyboard-75 \
+            GYTP-AHKv2-media-keys
