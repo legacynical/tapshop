@@ -190,6 +190,14 @@ function SettingsWindow.new(app, cfg, deps)
     panelRef:evaluateJavaScript("window.tapshopApplySettingsWindowState && window.tapshopApplySettingsWindowState(" .. encoded .. ")")
   end
 
+  local function pushOpacityUpdate(panelRef, percent)
+    if not panelRef or not panelRef:isShown() or not panelRef:hasContent() then
+      return
+    end
+    local p = tonumber(percent) or 85
+    panelRef:evaluateJavaScript("window.tapshopUpdateOpacity && window.tapshopUpdateOpacity(" .. tostring(p) .. ")")
+  end
+
   local function hideRemapPanel()
     stopRemapRecorder()
     if panel and panel:isShown() and panel:hasContent() then
@@ -611,6 +619,12 @@ function SettingsWindow.new(app, cfg, deps)
       if action == "setAlwaysOnTop" then
         panelRef:setLevel(currentPanelLevel())
       end
+      if action == "setPopoverOpacity" then
+        local rawPercent = tonumber(body and body.slot)
+        if rawPercent then
+          pushOpacityUpdate(panelRef, rawPercent)
+        end
+      end
     end,
     windowCallback = function(_, act, _, focusState)
       if act == "focusChange" then
@@ -722,6 +736,10 @@ function SettingsWindow.new(app, cfg, deps)
 
   function instance:syncWindowLevel()
     panel:setLevel(currentPanelLevel())
+  end
+
+  function instance:pushOpacityUpdate(percent)
+    pushOpacityUpdate(panel, percent)
   end
 
   return instance

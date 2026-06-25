@@ -520,6 +520,14 @@ function Popover.new(app, cfg, deps)
     panel:syncBehavior()
   end
 
+  function instance:pushOpacityUpdate(percent)
+    if not panel:isShown() or not panel:hasContent() then
+      return
+    end
+    local p = tonumber(percent) or 85
+    panel:evaluateJavaScript("window.tapshopUpdateOpacity && window.tapshopUpdateOpacity(" .. tostring(p) .. ")")
+  end
+
   return instance
 end
 

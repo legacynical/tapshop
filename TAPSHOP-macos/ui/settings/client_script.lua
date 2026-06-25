@@ -338,6 +338,24 @@ window.tapshopCancelRemapRecorder = function () {
   cancelRemapModal(true);
 };
 
+function updateOpacityCss(percent) {
+  var p = parseInt(percent, 10);
+  if (isNaN(p)) return;
+  var opacity = Math.max(0.40, Math.min(1.0, p / 100));
+  var root = document.documentElement;
+  if (root && root.style) {
+    root.style.setProperty("--panel-bg", "rgba(20, 20, 20, " + opacity.toFixed(2) + ")");
+  }
+}
+
+function updateOpacityPreview(value) {
+  updateOpacityCss(value);
+}
+
+window.tapshopUpdateOpacity = function (percent) {
+  updateOpacityCss(percent);
+};
+
 function switchSettingsTab(tab) {
   if (hotkeyMutationPending) return;
   cancelRemapModal();

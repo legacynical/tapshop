@@ -138,7 +138,16 @@ function AppState:getYouTubeTargetId()
   return self.youtubeService:getTargetId()
 end
 
-function AppState:syncUi()
+function AppState:syncUi(opacityPercent)
+  if opacityPercent then
+    if self.popover and self.popover.pushOpacityUpdate then
+      self.popover:pushOpacityUpdate(opacityPercent)
+    end
+    if self.settingsWindow and self.settingsWindow.pushOpacityUpdate then
+      self.settingsWindow:pushOpacityUpdate(opacityPercent)
+    end
+  end
+
   local components = {
     self.popover,
     self.settingsWindow,
@@ -1050,8 +1059,9 @@ end
 
 function AppState:setPopoverOpacity(opacity)
   local normalized = opacity > 1 and (opacity / 100) or opacity
+  local percent = math.floor(normalized * 100 + 0.5)
   self.cfg.popoverBackgroundOpacity = self.settings.setPopoverBackgroundOpacity(normalized)
-  self:syncUi()
+  self:syncUi(percent)
 end
 
 function AppState:getHotkeyUiState()
