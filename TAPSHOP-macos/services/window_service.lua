@@ -94,15 +94,87 @@ function WindowService.candidateWindows()
   return out
 end
 
-local function allWindows()
-  if hs.window and type(hs.window.allWindows) == "function" then
-    local ok, wins = pcall(hs.window.allWindows)
-    if ok and type(wins) == "table" then
-      return wins
-    end
+local function appendWindow(out, seen, win)
+  if not win then
+    return
   end
 
-  return hs.window.orderedWindows() or {}
+  local ok, id = pcall(function()
+    return win:id()
+  end)
+  if ok and id and not seen[id] then
+    seen[id] = true
+    out[#out + 1] = win
+  end
+end
+
+local function collectWindowIds(value, out)
+  if type(value) == "number" then
+    out[value] = true
+    return
+  end
+
+  if type(value) ~= "table" then
+    return
+  end
+
+  for key, item in pairs(value) do
+    if type(key) == "number" then
+      out[key] = true
+    end
+    collectWindowIds(item, out)
+  end
+end
+
+local function appendSpaceWindows(out, seen)
+  if not hs.window or not hs.spaces or type(hs.spaces.allWindows) ~= "function" then
+    return
+  end
+
+  local ok, windowsBySpace = pcall(hs.spaces.allWindows)
+  if not ok then
+    return
+  end
+
+  local windowIds = {}
+  collectWindowIds(windowsBySpace, windowIds)
+  for id, _ in pairs(windowIds) do
+    local gotWindow, win = pcall(hs.window.get, id)
+    if gotWindow then
+      appendWindow(out, seen, win)
+    end
+  end
+end
+
+local function appendWindowList(out, seen, sourceFn)
+  if type(sourceFn) ~= "function" then
+    return
+  end
+
+  local ok, wins = pcall(sourceFn)
+  if not ok or type(wins) ~= "table" then
+    return
+  end
+
+  for _, win in ipairs(wins) do
+    appendWindow(out, seen, win)
+  end
+end
+
+local function allWindows()
+  local out = {}
+  local seen = {}
+
+  if hs.window and type(hs.window.allWindows) == "function" then
+    appendWindowList(out, seen, hs.window.allWindows)
+  end
+
+  if hs.window and type(hs.window.orderedWindows) == "function" then
+    appendWindowList(out, seen, hs.window.orderedWindows)
+  end
+
+  appendSpaceWindows(out, seen)
+  return out
 end
 
 local function hasNonBlankTitle(win)
@@ -117,8 +189,10 @@ function WindowService.recoveryCandidateWindows()
   local seen = {}
   for _, win in ipairs(allWindows()) do
     if WindowService.isRecoveryCandidateWindow(win) then
-      local id = win:id()
-      if id and not seen[id] then
+      local ok, id = pcall(function()
+        return win:id()
+      end)
+      if ok and id and not seen[id] then
         seen[id] = true
         out[#out + 1] = win
       end

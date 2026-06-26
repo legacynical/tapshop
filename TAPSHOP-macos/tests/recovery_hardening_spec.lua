@@ -25,6 +25,7 @@ hs = {
 local AppState = require("state.app_state")
 local Workspace = require("state.workspace")
 local SlotRow = require("state.slot_row")
+local WindowService = require("services.window_service")
 
 local Window = {}
 Window.__index = Window
@@ -201,6 +202,7 @@ local function makeApp(windowService, workspace)
       workspace or Workspace.new(1, "Test Window", 2),
     },
   }
+  local persistedProfiles = {}
   local app = setmetatable({
     cfg = {
       recoverClosedWindows = true,
@@ -208,7 +210,9 @@ local function makeApp(windowService, workspace)
       focusPollMicros = 1,
     },
     appdata = {
-      setProfilesWindowPairings = function() end,
+      setProfilesWindowPairings = function(profiles)
+        persistedProfiles[#persistedProfiles + 1] = profiles
+      end,
     },
     windowService = windowService,
     youtubeService = {
@@ -223,11 +227,17 @@ local function makeApp(windowService, workspace)
       activeProfileId = 1,
       focusedSpaceId = 1,
     },
+    persistedProfiles = persistedProfiles,
   }, AppState)
   app.toast = function(message)
     app.toastMessages[#app.toastMessages + 1] = message
   end
   return app, profile.workspaces[1]
+end
+
+local function lastSavedRecord(app)
+  local latest = app.persistedProfiles[#app.persistedProfiles]
+  return latest and latest[1] and latest[1][1] or nil
 end
 
 local function pairWorkspace(workspace, windowId, title)
@@ -265,6 +275,33 @@ tests.fullscreen_base_destroyed_becomes_recoverable = function()
 
   assert(workspace:isRecoverable(), "fullscreen base should become recoverable")
   assert(workspace:getBaseWindowId() == nil, "stale fullscreen base id should be cleared")
+  assert(#app.persistedProfiles > 0, "destroyed fullscreen recovery should persist")
+  assert(lastSavedRecord(app).kind == "recoverable", "persisted fullscreen slot should be recoverable")
+end
+
+tests.destroyed_base_with_unrepaired_companion_falls_back_to_unpair = function()
+  local deadWin = Window.new({
+    _id = 10,
+    _title = "Companion Doc",
+    _spaces = {
+      1,
+    },
+  })
+  local service = makeWindowService({}, {})
+  local app, workspace = makeApp(service)
+  app.cfg.recoverClosedWindows = false
+  pairWorkspace(workspace, 10, "Companion Doc")
+  workspace:setFullscreenState({
+    fullscreenWindowId = 11,
+    fullscreenSpaceId = 200,
+    lastKnownSpaceId = 1,
+  })
+
+  app:handleWindowEvent(hs.window.filter.windowDestroyed, deadWin)
+
+  assert(workspace:getBindingKind() == "empty", "unrepaired destroyed base should use fallback unpair")
+  assert(#app.persistedProfiles > 0, "fallback unpair should persist")
+  assert(lastSavedRecord(app) == nil, "fallback persisted slot should be removed")
 end
 
 tests.minimized_candidate_can_relink_stale_pairing = function()
@@ -313,6 +350,7 @@ tests.startup_relinks_stale_persisted_pairing = function()
   }, {
     restored,
   })
+  local persistedProfiles = {}
   local appdata = {
     getActiveProfileId = function()
       return 1
@@ -334,7 +372,9 @@ tests.startup_relinks_stale_persisted_pairing = function()
         },
       }
     end,
-    setProfilesWindowPairings = function() end,
+    setProfilesWindowPairings = function(profiles)
+      persistedProfiles[#persistedProfiles + 1] = profiles
+    end,
     setActiveProfileId = function() end,
   }
   local app = AppState.new({
@@ -354,6 +394,8 @@ tests.startup_relinks_stale_persisted_pairing = function()
   })
 
   assert(app.profiles[1].workspaces[1]:getBaseWindowId() == 20, "startup should relink stale pairing")
+  assert(#persistedProfiles > 0, "startup relink should persist")
+  assert(persistedProfiles[#persistedProfiles][1][1].baseWindowId == 20, "persisted startup slot should use restored id")
 end
 
 tests.activation_repairs_stale_pairing_before_error = function()
@@ -386,6 +428,8 @@ tests.activation_repairs_stale_pairing_before_error = function()
 
   assert(workspace:getBaseWindowId() == 20, "activation should relink stale pairing")
   assert(service.requestedFrontmost == restored, "activation should focus restored window")
+  assert(#app.persistedProfiles > 0, "activation relink should persist")
+  assert(lastSavedRecord(app).baseWindowId == 20, "persisted activation slot should use restored id")
 end
 
 tests.stale_off_space_locator_renders_unresolved = function()
@@ -444,8 +488,16 @@ tests.space_switch_failure_returns_specific_code = function()
       200,
     },
   })
+  local frontmost = Window.new({
+    _id = 30,
+    _title = "Other",
+    _spaces = {
+      1,
+    },
+  })
   local service = makeWindowService({
     [20] = target,
+    [30] = frontmost,
   }, {})
   service.gotoSpaceResult = {
     ok = false,
@@ -455,10 +507,63 @@ tests.space_switch_failure_returns_specific_code = function()
   local app, workspace = makeApp(service)
   pairWorkspace(workspace, 20, "Space Doc")
   workspace:setBaseSpaceId(200)
+  currentFrontmost = frontmost
 
-  local activationResult = app:_activateResolvedPairedWindow(workspace, target, 1)
+  app:activateSlot(1)
 
-  assert(activationResult.code == "space_switch_timeout", "Space switch failure should be specific")
+  local toast = app.toastMessages[#app.toastMessages]
+  local text = toast and toast.lines[1].segments[1].text or ""
+  assert(text:match("did not switch to its Space"), "Space switch failure should surface through activation")
+end
+
+tests.recovery_candidates_include_spaces_all_windows = function()
+  local offSpace = Window.new({
+    _id = 40,
+    _title = "Off Space Doc",
+    _spaces = {
+      200,
+    },
+  })
+  local original = {
+    allWindows = hs.window.allWindows,
+    orderedWindows = hs.window.orderedWindows,
+    get = hs.window.get,
+    spaces = hs.spaces,
+  }
+
+  local ok, err = pcall(function()
+    hs.window.allWindows = function()
+      return {}
+    end
+    hs.window.orderedWindows = function()
+      error("volatile orderedWindows")
+    end
+    hs.window.get = function(id)
+      return id == 40 and offSpace or nil
+    end
+    hs.spaces = {
+      allWindows = function()
+        return {
+          [200] = {
+            40,
+          },
+        }
+      end,
+    }
+
+    local candidates = WindowService.recoveryCandidateWindows()
+    assert(#candidates == 1, "Spaces-aware recovery should find one candidate")
+    assert(candidates[1] == offSpace, "Spaces-aware recovery should include off-Space window")
+  end)
+
+  hs.window.allWindows = original.allWindows
+  hs.window.orderedWindows = original.orderedWindows
+  hs.window.get = original.get
+  hs.spaces = original.spaces
+
+  if not ok then
+    error(err)
+  end
 end
 
 local failures = 0

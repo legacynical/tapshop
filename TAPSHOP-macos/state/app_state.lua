@@ -1522,8 +1522,9 @@ function AppState:handleWindowEvent(event, win)
           })
           if repairResult.changed then
             basePairingChanged = true
+            return
           end
-          return
+          -- Repair could not relink; fall through to the regular closed-window path.
         end
         if workspace:hasTrackedFullscreenTarget()
           and workspace:getFullscreenTargetWindowId() == deadId
