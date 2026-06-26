@@ -94,6 +94,39 @@ function WindowService.candidateWindows()
   return out
 end
 
+local function allWindows()
+  if hs.window and type(hs.window.allWindows) == "function" then
+    local ok, wins = pcall(hs.window.allWindows)
+    if ok and type(wins) == "table" then
+      return wins
+    end
+  end
+
+  return hs.window.orderedWindows() or {}
+end
+
+local function hasNonBlankTitle(win)
+  local ok, title = pcall(function()
+    return win:title()
+  end)
+  return ok and type(title) == "string" and title:match("%S") ~= nil
+end
+
+function WindowService.recoveryCandidateWindows()
+  local out = {}
+  local seen = {}
+  for _, win in ipairs(allWindows()) do
+    if WindowService.isRecoveryCandidateWindow(win) then
+      local id = win:id()
+      if id and not seen[id] then
+        seen[id] = true
+        out[#out + 1] = win
+      end
+    end
+  end
+  return out
+end
+
 function WindowService.getWindowById(id)
   if not id then
     return nil
@@ -152,6 +185,17 @@ function WindowService.isCandidateWindow(win)
   end
 
   return win:isVisible() and win:isStandard() and (win:title() or ""):match("%S") ~= nil
+end
+
+function WindowService.isRecoveryCandidateWindow(win)
+  if not win then
+    return false
+  end
+
+  local ok, isStandard = pcall(function()
+    return win:isStandard()
+  end)
+  return ok and isStandard == true and hasNonBlankTitle(win)
 end
 
 function WindowService.waitForFrontmost(win, cfg)
